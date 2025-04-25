@@ -1,0 +1,131 @@
+🚨 NetPulse — Système de Surveillance Réseau en Temps Réel
+NetPulse est une application full-stack conçue pour surveiller, analyser et visualiser en temps réel l'état d'un réseau informatique. Ce projet combine un backend Node.js (Express + TypeScript) et un frontend React (avec TailwindCSS et Chart.js) dans une architecture monorepo simple et maintenable.
+
+📁 Structure du projet
+bash
+Copier
+Modifier
+netpulse/
+├── backend/               # API REST + WebSocket + collecte réseau
+│   ├── src/
+│   ├── .env
+│   ├── package.json
+│   └── tsconfig.json
+├── frontend/              # Interface utilisateur React
+│   ├── src/
+│   ├── public/
+│   ├── .env
+│   ├── package.json
+│   └── tailwind.config.js
+├── docker-compose.yml     # Conteneurisation (frontend + backend + MongoDB)
+├── README.md              # Ce fichier
+└── .github/workflows/     # Intégration continue (facultatif)
+⚙️ Installation (en local)
+1. Cloner le projet
+bash
+Copier
+Modifier
+git clone https://github.com/votre-utilisateur/netpulse.git
+cd netpulse
+2. Lancer le backend
+bash
+Copier
+Modifier
+cd backend
+npm install
+cp .env.example .env
+npm run dev
+3. Lancer le frontend
+bash
+Copier
+Modifier
+cd ../frontend
+npm install
+cp .env.example .env
+npm start
+4. Scripts utiles à la racine
+bash
+Copier
+Modifier
+npm run dev           # Lance frontend + backend en parallèle
+npm run dev:frontend  # Lance seulement le frontend
+npm run dev:backend   # Lance seulement le backend
+🧪 Tests de base après installation
+Accédez à http://localhost:3000
+
+Vérifiez que les composants graphiques affichent les données simulées
+
+Testez la communication en temps réel :
+
+Des métriques doivent apparaître dans les graphiques
+
+Une alerte apparaît si un seuil est dépassé (trafic, latence, etc.)
+
+Vérifiez les logs dans le terminal backend pour le trafic émis
+
+🐳 Docker (optionnel)
+Lancement via Docker Compose
+bash
+Copier
+Modifier
+docker-compose up --build
+Cela va lancer :
+
+Le backend sur http://localhost:5000
+
+Le frontend sur http://localhost:3000
+
+MongoDB sur mongodb://localhost:27017
+
+🌐 Technologies
+Backend
+Express.js + TypeScript
+
+Socket.IO
+
+MongoDB / InfluxDB
+
+pcap, netstat, nmap
+
+Frontend
+React.js + Vite
+
+TailwindCSS
+
+Chart.js / react-chartjs-2
+
+Axios + socket.io-client
+
+📊 Fonctionnalités principales
+🔴 Surveillance réseau en temps réel
+
+📉 Visualisation graphique dynamique
+
+⚠️ Alertes sur seuils de trafic ou comportement anormal
+
+📡 Détection des appareils connectés
+
+🔒 Authentification JWT (optionnelle)
+
+📁 Architecture modulaire prête pour CI/CD
+
+🧑‍💻 Démo de soutenance
+Prévoir un scénario de test avec simulation de trafic réseau (ping, iperf, etc.)
+
+Déclencher une alerte et visualiser sa réception côté frontend
+
+Présenter les composants techniques dans un support (Slides, Figma, PDF)
+
+✍️ Auteur
+Projet de soutenance — Génie Logiciel & Architecture Réseaux
+Développé par : Groupe 83
+Promo : 2025
+Université / École : IUT de Douala
+✅ À faire encore
+ Authentification JWT sécurisée
+
+ Dashboard admin avec filtres personnalisés
+
+ Intégration CI/CD GitHub Actions
+
+ Export CSV / PDF des métriques
