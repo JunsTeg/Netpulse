@@ -25,7 +25,7 @@ netpulse/
 bash
 Copier
 Modifier
-git clone https://github.com/votre-utilisateur/netpulse.git
+git clone https://github.com/Juntegs/netpulse.git
 cd netpulse
 2. Lancer le backend
 bash
