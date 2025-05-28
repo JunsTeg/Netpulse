@@ -1,0 +1,196 @@
+{
+  "info": {
+    "name": "Netpulse API",
+    "description": "Collection de test pour l'API Netpulse",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Test Connection",
+      "item": [
+        {
+          "name": "Test GET Connection",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/test",
+              "host": ["{{base_url}}"],
+              "path": ["api", "test"]
+            },
+            "description": "Test de la connexion GET avec l'API"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/test",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "test"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": {
+                "status": "success",
+                "message": "Connexion au backend reussie!",
+                "timestamp": "2024-03-28T12:00:00.000Z"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Test POST Connection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"Test message from Postman\",\n    \"data\": {\n        \"test\": \"value\",\n        \"timestamp\": \"2024-03-28\"\n    }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/test",
+              "host": ["{{base_url}}"],
+              "path": ["api", "test"]
+            },
+            "description": "Test de l'envoi de donnees POST a l'API"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"message\": \"Test message from Postman\",\n    \"data\": {\n        \"test\": \"value\",\n        \"timestamp\": \"2024-03-28\"\n    }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/test",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "test"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": {
+                "status": "success",
+                "message": "Donnees recues avec succes!",
+                "receivedData": {
+                  "message": "Test message from Postman",
+                  "data": {
+                    "test": "value",
+                    "timestamp": "2024-03-28"
+                  }
+                },
+                "timestamp": "2024-03-28T12:00:00.000Z"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Tests pour la requete GET",
+          "if (pm.info.requestName === \"Test GET Connection\") {",
+          "    pm.test(\"Status code est 200\", function () {",
+          "        pm.response.to.have.status(200);",
+          "    });",
+          "",
+          "    pm.test(\"Response contient les champs attendus\", function () {",
+          "        const response = pm.response.json();",
+          "        pm.expect(response).to.have.property('status');",
+          "        pm.expect(response).to.have.property('message');",
+          "        pm.expect(response).to.have.property('timestamp');",
+          "        pm.expect(response.status).to.eql('success');",
+          "    });",
+          "}",
+          "",
+          "// Tests pour la requete POST",
+          "if (pm.info.requestName === \"Test POST Connection\") {",
+          "    pm.test(\"Status code est 200\", function () {",
+          "        pm.response.to.have.status(200);",
+          "    });",
+          "",
+          "    pm.test(\"Response contient les donnees envoyees\", function () {",
+          "        const response = pm.response.json();",
+          "        const requestData = JSON.parse(pm.request.body.raw);",
+          "",
+          "        pm.expect(response).to.have.property('status');",
+          "        pm.expect(response).to.have.property('receivedData');",
+          "        pm.expect(response.status).to.eql('success');",
+          "        pm.expect(response.receivedData).to.deep.include(requestData);",
+          "    });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001",
+      "type": "string"
+    }
+  ]
+} 
