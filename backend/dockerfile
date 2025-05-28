@@ -1,0 +1,36 @@
+# --- Étape 1 : Base de build ---
+    FROM node:18 AS base
+
+    WORKDIR /app
+    
+    # Copie et installe les dépendances
+    COPY package*.json ./
+    RUN npm install
+    
+    # Copie le reste du code
+    COPY . .
+    
+    # --- Étape 2 : Pour le développement ---
+    FROM base AS development
+    
+    ENV NODE_ENV=development
+    
+    # Installation des dépendances de dev
+    RUN npm install --only=development
+    
+    CMD ["npx", "ts-node-dev", "--respawn", "--transpile-only", "src/index.ts"]
+    
+    # --- Étape 3 : Pour la production ---
+    FROM base AS production
+    
+    ENV NODE_ENV=production
+    
+    # Build TypeScript
+    RUN npm run build
+    
+    # Installer uniquement les deps de prod
+    RUN npm prune --production
+    
+    # Nettoyage + exécution de dist
+    CMD ["node", "dist/index.js"]
+    

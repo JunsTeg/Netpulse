@@ -1,43 +1,61 @@
-version: '3.8'
-
 services:
-  mongo:
-    image: mongo
-    container_name: netpulse-mongo
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-
-  backend:
-    build: ./backend
-    container_name: netpulse-backend
-    ports:
-      - "5000:5000"
+  mysql:
+    image: mysql:8.0
+    container_name: netpulse-db
+    restart: always
+    env_file: .env
     environment:
-      - PORT=5000
-      - DB_URI=mongodb://mongo:27017/netpulse
-      - JWT_SECRET=your_jwt_secret
-      - SCAN_INTERVAL=5000
-    depends_on:
-      - mongo
-    volumes:
-      - ./backend:/app
-    command: npm run dev
-
-  frontend:
-    build: ./frontend
-    container_name: netpulse-frontend
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
     ports:
-      - "3000:3000"
-    environment:
-      - REACT_APP_API_URL=http://localhost:5000/api
-      - REACT_APP_SOCKET_URL=http://localhost:5000
+      - "${MYSQL_PORT}:3306"
     volumes:
-      - ./frontend:/app
-    command: npm start
+      - db-data:/var/lib/mysql
+      - ./mysql/conf.d:/etc/mysql/conf.d
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max_allowed_packet=128M
+    networks:
+      - netpulse-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  phpmyadmin:
+    image: phpmyadmin
+    container_name: netpulse-pma
+    restart: always
+    ports:
+      - "8080:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: ${MYSQL_USER}
+      PMA_PASSWORD: ${MYSQL_PASSWORD}
     depends_on:
-      - backend
+      - mysql
+    networks:
+      - netpulse-network
+
+networks:
+  netpulse-network:
+    driver: bridge
 
 volumes:
-  mongo_data:
+  db-data:
+    driver: local

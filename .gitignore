@@ -1,0 +1,73 @@
+# Dependances
+node_modules/
+/.pnp
+.pnp.js
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build
+/build
+/dist
+/out
+/.next/
+/staticfiles/
+*.egg-info/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE et editeurs
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Tests et couverture
+/coverage
+/.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Fichiers systeme
+.DS_Store
+Thumbs.db
+
+# Fichiers temporaires
+*.tmp
+*.temp
+.cache/
+
+# Fichiers de base de donnees
+*.sqlite3
+*.db
+
+# Fichiers de configuration sensibles
+*.pem
+*.key
+*.cert
+
+# Fichiers de backup
+*.bak
+*.backup
+*~
+
+# Fichiers specifiques au projet
+/media/
+/uploads/
+/downloads/
+/temp/ 
