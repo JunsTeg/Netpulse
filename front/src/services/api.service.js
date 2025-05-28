@@ -13,7 +13,7 @@ class ApiService {
   // Methode generique pour les requetes
   async request(endpoint, options = {}) {
     const url = `${this.baseURL}${endpoint}`;
-    console.log('=== DETAILLES DE LA REQUETE ===');
+    console.log('=== DETAILS DE LA REQUETE ===');
     console.log('URL complete:', url);
     console.log('Endpoint:', endpoint);
     console.log('Base URL:', this.baseURL);
