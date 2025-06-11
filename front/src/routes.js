@@ -1,8 +1,11 @@
 import React from 'react'
+import CIcon from '@coreui/icons-react'
+import * as icon from '@coreui/icons'
 
 const Dashboard = React.lazy(() => import('./views/dashboard/Dashboard'))
 const Colors = React.lazy(() => import('./views/theme/colors/Colors'))
 const Typography = React.lazy(() => import('./views/theme/typography/Typography'))
+const Profile = React.lazy(() => import('./views/profile/Profile'))
 
 // Base
 const Accordion = React.lazy(() => import('./views/base/accordion/Accordion'))
@@ -57,6 +60,12 @@ const TestConnection = React.lazy(() => import('./views/test-connection/TestConn
 const routes = [
   { path: '/', exact: true, name: 'Home' },
   { path: '/dashboard', name: 'Dashboard', element: Dashboard },
+  {
+    path: '/profile',
+    name: 'Profil',
+    element: Profile,
+    icon: <CIcon icon={icon.cilUser} customClassName="nav-icon" />,
+  },
   { path: '/theme', name: 'Theme', element: Colors, exact: true },
   { path: '/theme/colors', name: 'Colors', element: Colors },
   { path: '/theme/typography', name: 'Typography', element: Typography },

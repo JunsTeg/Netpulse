@@ -1,7 +1,7 @@
 // Configuration de l'API
 const API_CONFIG = {
   // URL de base de l'API
-  baseURL: 'http://localhost:3001',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3001/api',
   
   // Configuration des headers par defaut
   headers: {

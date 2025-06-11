@@ -5,9 +5,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { RegisterDto, LoginDto, AuthResponseDto } from './dto/auth.dto';
 import { sequelize } from '../database';
 import { QueryTypes } from 'sequelize';
+import { UpdateUserDto } from '../users/dto/update-user.dto';
 
 // Interface pour typer les resultats de la base de donnees
-interface UserRecord {
+export interface UserRecord {
   id: string;
   username: string;
   email: string;
@@ -195,5 +196,90 @@ export class AuthService {
         type: QueryTypes.UPDATE,
       },
     );
+  }
+
+  // Methode pour recuperer un utilisateur par son ID
+  async getUserById(id: string) {
+    const users = await sequelize.query<UserRecord>(
+      'SELECT id, username, email, createdAt, lastLoginAt FROM utilisateur WHERE id = :id AND isActive = true',
+      {
+        replacements: { id },
+        type: QueryTypes.SELECT,
+      },
+    );
+
+    const user = users[0];
+
+    if (!user) {
+      throw new UnauthorizedException('Utilisateur non trouve');
+    }
+
+    return user;
+  }
+
+  // Methode pour mettre a jour un utilisateur
+  async updateUser(id: string, updateUserDto: UpdateUserDto) {
+    const users = await sequelize.query<UserRecord>(
+      'SELECT * FROM utilisateur WHERE id = :id AND isActive = true',
+      {
+        replacements: { id },
+        type: QueryTypes.SELECT,
+      },
+    );
+
+    const user = users[0];
+
+    if (!user) {
+      throw new UnauthorizedException('Utilisateur non trouve');
+    }
+
+    // Si un nouveau mot de passe est fourni
+    if (updateUserDto.newPassword) {
+      if (!updateUserDto.currentPassword) {
+        throw new UnauthorizedException('Le mot de passe actuel est requis');
+      }
+
+      const isPasswordValid = await bcrypt.compare(
+        updateUserDto.currentPassword,
+        user.password,
+      );
+
+      if (!isPasswordValid) {
+        throw new UnauthorizedException('Mot de passe actuel incorrect');
+      }
+
+      // Hash du nouveau mot de passe
+      const hashedPassword = await bcrypt.hash(updateUserDto.newPassword, 10);
+
+      // Mise a jour avec le nouveau mot de passe
+      await sequelize.query(
+        'UPDATE utilisateur SET username = :username, email = :email, password = :password WHERE id = :id',
+        {
+          replacements: {
+            id,
+            username: updateUserDto.username || user.username,
+            email: updateUserDto.email || user.email,
+            password: hashedPassword,
+          },
+          type: QueryTypes.UPDATE,
+        },
+      );
+    } else {
+      // Mise a jour sans changement de mot de passe
+      await sequelize.query(
+        'UPDATE utilisateur SET username = :username, email = :email WHERE id = :id',
+        {
+          replacements: {
+            id,
+            username: updateUserDto.username || user.username,
+            email: updateUserDto.email || user.email,
+          },
+          type: QueryTypes.UPDATE,
+        },
+      );
+    }
+
+    // Recuperation des donnees mises a jour
+    return this.getUserById(id);
   }
 } 
