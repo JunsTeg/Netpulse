@@ -36,7 +36,14 @@ export class AuthService {
     );
 
     if (existingUsers.length > 0) {
-      throw new ConflictException('Username ou email deja utilise');
+      const existingUser = existingUsers[0];
+      if (existingUser.username === username && existingUser.email === email) {
+        throw new ConflictException('Ce nom d\'utilisateur et cette adresse email sont déjà utilisés');
+      } else if (existingUser.username === username) {
+        throw new ConflictException('Ce nom d\'utilisateur est déjà pris');
+      } else {
+        throw new ConflictException('Cette adresse email est déjà utilisée');
+      }
     }
 
     // Hashage du mot de passe
@@ -76,7 +83,7 @@ export class AuthService {
 
     // Recherche de l'utilisateur
     const users = await sequelize.query<UserRecord>(
-      'SELECT * FROM utilisateur WHERE username = :username AND isActive = true',
+      'SELECT * FROM utilisateur WHERE username = :username',
       {
         replacements: { username },
         type: QueryTypes.SELECT,
@@ -86,14 +93,27 @@ export class AuthService {
     const user = users[0];
 
     if (!user) {
-      throw new UnauthorizedException('Identifiants invalides');
+      throw new UnauthorizedException({
+        message: 'Nom d\'utilisateur incorrect',
+        error: 'Unauthorized'
+      });
+    }
+
+    if (!user.isActive) {
+      throw new UnauthorizedException({
+        message: 'Ce compte a été désactivé',
+        error: 'Unauthorized'
+      });
     }
 
     // Verification du mot de passe
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Identifiants invalides');
+      throw new UnauthorizedException({
+        message: 'Mot de passe incorrect',
+        error: 'Unauthorized'
+      });
     }
 
     // Mise a jour de lastLoginAt
@@ -142,12 +162,12 @@ export class AuthService {
       );
 
       if (!users[0]) {
-        throw new UnauthorizedException('Utilisateur non trouve ou desactive');
+        throw new UnauthorizedException('Session invalide : utilisateur non trouvé');
       }
 
       return payload;
     } catch (error) {
-      throw new UnauthorizedException('Token invalide');
+      throw new UnauthorizedException('Session expirée ou invalide');
     }
   }
 
@@ -175,13 +195,13 @@ export class AuthService {
     const user = users[0];
 
     if (!user) {
-      throw new UnauthorizedException('Utilisateur non trouve');
+      throw new UnauthorizedException('Compte non trouvé');
     }
 
     const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
 
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Mot de passe actuel incorrect');
+      throw new UnauthorizedException('Le mot de passe actuel est incorrect');
     }
 
     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
@@ -198,88 +218,75 @@ export class AuthService {
     );
   }
 
-  // Methode pour recuperer un utilisateur par son ID
-  async getUserById(id: string) {
+  // Methode pour recuperer tous les utilisateurs
+  async getAllUsers(): Promise<UserRecord[]> {
     const users = await sequelize.query<UserRecord>(
-      'SELECT id, username, email, createdAt, lastLoginAt FROM utilisateur WHERE id = :id AND isActive = true',
+      'SELECT id, username, email, isActive, createdAt, lastLoginAt FROM utilisateur',
+      {
+        type: QueryTypes.SELECT,
+      },
+    );
+    return users;
+  }
+
+  // Methode pour recuperer un utilisateur par son ID
+  async getUserById(id: string): Promise<UserRecord> {
+    const users = await sequelize.query<UserRecord>(
+      'SELECT id, username, email, isActive, createdAt, lastLoginAt FROM utilisateur WHERE id = :id',
       {
         replacements: { id },
         type: QueryTypes.SELECT,
       },
     );
-
-    const user = users[0];
-
-    if (!user) {
+    if (users.length === 0) {
       throw new UnauthorizedException('Utilisateur non trouve');
     }
-
-    return user;
+    return users[0];
   }
 
   // Methode pour mettre a jour un utilisateur
-  async updateUser(id: string, updateUserDto: UpdateUserDto) {
-    const users = await sequelize.query<UserRecord>(
-      'SELECT * FROM utilisateur WHERE id = :id AND isActive = true',
+  async updateUser(id: string, updateUserDto: UpdateUserDto): Promise<UserRecord> {
+    const { username, email, password } = updateUserDto;
+    const updateFields = [];
+    const replacements: any = { id };
+
+    if (username) {
+      updateFields.push('username = :username');
+      replacements.username = username;
+    }
+    if (email) {
+      updateFields.push('email = :email');
+      replacements.email = email;
+    }
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      updateFields.push('password = :password');
+      replacements.password = hashedPassword;
+    }
+
+    if (updateFields.length === 0) {
+      return this.getUserById(id);
+    }
+
+    await sequelize.query(
+      `UPDATE utilisateur SET ${updateFields.join(', ')} WHERE id = :id`,
       {
-        replacements: { id },
-        type: QueryTypes.SELECT,
+        replacements,
+        type: QueryTypes.UPDATE,
       },
     );
 
-    const user = users[0];
-
-    if (!user) {
-      throw new UnauthorizedException('Utilisateur non trouve');
-    }
-
-    // Si un nouveau mot de passe est fourni
-    if (updateUserDto.newPassword) {
-      if (!updateUserDto.currentPassword) {
-        throw new UnauthorizedException('Le mot de passe actuel est requis');
-      }
-
-      const isPasswordValid = await bcrypt.compare(
-        updateUserDto.currentPassword,
-        user.password,
-      );
-
-      if (!isPasswordValid) {
-        throw new UnauthorizedException('Mot de passe actuel incorrect');
-      }
-
-      // Hash du nouveau mot de passe
-      const hashedPassword = await bcrypt.hash(updateUserDto.newPassword, 10);
-
-      // Mise a jour avec le nouveau mot de passe
-      await sequelize.query(
-        'UPDATE utilisateur SET username = :username, email = :email, password = :password WHERE id = :id',
-        {
-          replacements: {
-            id,
-            username: updateUserDto.username || user.username,
-            email: updateUserDto.email || user.email,
-            password: hashedPassword,
-          },
-          type: QueryTypes.UPDATE,
-        },
-      );
-    } else {
-      // Mise a jour sans changement de mot de passe
-      await sequelize.query(
-        'UPDATE utilisateur SET username = :username, email = :email WHERE id = :id',
-        {
-          replacements: {
-            id,
-            username: updateUserDto.username || user.username,
-            email: updateUserDto.email || user.email,
-          },
-          type: QueryTypes.UPDATE,
-        },
-      );
-    }
-
-    // Recuperation des donnees mises a jour
     return this.getUserById(id);
+  }
+
+  // Methode pour supprimer un utilisateur
+  async deleteUser(id: string): Promise<void> {
+    await sequelize.query(
+      'DELETE FROM utilisateur WHERE id = :id',
+      {
+        replacements: { id },
+        type: QueryTypes.DELETE,
+      },
+    );
   }
 } 

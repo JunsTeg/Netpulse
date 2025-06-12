@@ -1,6 +1,5 @@
 import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { API_CONFIG, buildApiUrl } from '../config/api.config';
 
 // Configuration globale d'axios
 axios.defaults.withCredentials = true;
@@ -10,7 +9,7 @@ class AuthService {
   // Methode pour enregistrer un nouvel utilisateur
   async register(username, email, password) {
     try {
-      const response = await axios.post(`${API_URL}/auth/register`, {
+      const response = await axios.post(buildApiUrl(API_CONFIG.ROUTES.AUTH.REGISTER), {
         username,
         email,
         password,
@@ -33,7 +32,7 @@ class AuthService {
   // Methode pour connecter un utilisateur
   async login(username, password) {
     try {
-      const response = await axios.post(`${API_URL}/auth/login`, {
+      const response = await axios.post(buildApiUrl(API_CONFIG.ROUTES.AUTH.LOGIN), {
         username,
         password,
       });
@@ -45,7 +44,6 @@ class AuthService {
           email: response.data.user.email
         };
         localStorage.setItem('user', JSON.stringify(userData));
-        // Configuration du token pour les futures requetes
         this.setAuthHeader(response.data.access_token);
       }
       return response.data;
@@ -59,12 +57,11 @@ class AuthService {
     try {
       const token = this.getToken();
       if (token) {
-        await axios.post(`${API_URL}/auth/logout`, {}, {
+        await axios.post(buildApiUrl(API_CONFIG.ROUTES.AUTH.LOGOUT), {}, {
           headers: { Authorization: `Bearer ${token}` }
         });
       }
       localStorage.removeItem('user');
-      // Suppression du header d'authentification
       delete axios.defaults.headers.common['Authorization'];
       return true;
     } catch (error) {
@@ -115,16 +112,15 @@ class AuthService {
       if (!token) {
         throw new Error('Token d\'authentification manquant');
       }
-      const response = await axios.get(`${API_URL}/users/me`, {
+      const response = await axios.get(buildApiUrl(API_CONFIG.ROUTES.USERS.ME), {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      // Mise a jour des donnees utilisateur dans le localStorage
       const currentUser = this.getCurrentUser();
       const updatedUserData = {
         ...currentUser,
         ...response.data,
-        access_token: currentUser.access_token // On garde le token
+        access_token: currentUser.access_token
       };
       localStorage.setItem('user', JSON.stringify(updatedUserData));
       
@@ -151,7 +147,7 @@ class AuthService {
           return obj;
         }, {});
 
-      const response = await axios.put(`${API_URL}/users/me`, filteredData, {
+      const response = await axios.put(buildApiUrl(API_CONFIG.ROUTES.USERS.ME), filteredData, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -173,19 +169,28 @@ class AuthService {
   // Methode pour gerer les erreurs
   handleError(error) {
     if (error.response) {
-      // Erreur de reponse du serveur
+      const status = error.response.status;
       const message = error.response.data.message || 'Une erreur est survenue';
-      if (error.response.status === 401) {
-        // Si l'utilisateur n'est plus authentifie, on le deconnecte
-        localStorage.removeItem('user');
-        delete axios.defaults.headers.common['Authorization'];
+      
+      switch (status) {
+        case 400:
+          throw new Error(message);
+        case 401:
+          localStorage.removeItem('user');
+          delete axios.defaults.headers.common['Authorization'];
+          throw new Error(message);
+        case 403:
+          throw new Error(message);
+        case 404:
+          throw new Error(message);
+        case 409:
+          throw new Error(message);
+        default:
+          throw new Error(message);
       }
-      throw new Error(message);
     } else if (error.request) {
-      // Pas de reponse du serveur
       throw new Error('Impossible de contacter le serveur');
     } else {
-      // Erreur lors de la configuration de la requete
       throw new Error('Erreur de configuration de la requete');
     }
   }

@@ -1,12 +1,15 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto, AuthResponseDto } from './dto/auth.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { API_PREFIXES, API_ROUTES, API_RESPONSES } from '../config/api.config';
 
-@Controller('api/auth')
+@Controller(API_PREFIXES.AUTH)
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @HttpCode(HttpStatus.CREATED)
   async register(@Body() registerDto: RegisterDto): Promise<AuthResponseDto> {
     return this.authService.register(registerDto);
   }
@@ -18,8 +21,16 @@ export class AuthController {
   }
 
   @Post('logout')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async logout(): Promise<{ message: string }> {
-    return { message: 'Deconnexion reussie' };
+  async logout(@Request() req): Promise<{ message: string }> {
+    return { message: API_RESPONSES.SUCCESS.OK };
+  }
+
+  @Post('validate-token')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async validateToken(@Request() req): Promise<{ valid: boolean }> {
+    return { valid: true };
   }
 } 

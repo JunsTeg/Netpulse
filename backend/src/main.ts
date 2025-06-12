@@ -1,5 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { ValidationPipe } from '@nestjs/common';
+import { HttpExceptionFilter } from './filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -16,6 +18,16 @@ async function bootstrap() {
     preflightContinue: false,
     optionsSuccessStatus: 204
   });
+
+  // Configuration du filtre d'exception global
+  app.useGlobalPipes(new ValidationPipe({
+    transform: true,
+    whitelist: true,
+    forbidNonWhitelisted: true,
+  }));
+
+  // Application du filtre d'exception personnalisé
+  app.useGlobalFilters(new HttpExceptionFilter());
 
   // Ajout d'un middleware pour logger les requêtes
   app.use((req, res, next) => {

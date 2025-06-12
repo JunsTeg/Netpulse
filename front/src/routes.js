@@ -6,6 +6,7 @@ const Dashboard = React.lazy(() => import('./views/dashboard/Dashboard'))
 const Colors = React.lazy(() => import('./views/theme/colors/Colors'))
 const Typography = React.lazy(() => import('./views/theme/typography/Typography'))
 const Profile = React.lazy(() => import('./views/profile/Profile'))
+const Users = React.lazy(() => import('./views/users/Users'))
 
 // Base
 const Accordion = React.lazy(() => import('./views/base/accordion/Accordion'))
@@ -64,6 +65,12 @@ const routes = [
     path: '/profile',
     name: 'Profil',
     element: Profile,
+    icon: <CIcon icon={icon.cilUser} customClassName="nav-icon" />,
+  },
+  {
+    path: '/users',
+    name: 'Utilisateurs',
+    element: Users,
     icon: <CIcon icon={icon.cilUser} customClassName="nav-icon" />,
   },
   { path: '/theme', name: 'Theme', element: Colors, exact: true },
