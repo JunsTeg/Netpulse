@@ -38,9 +38,34 @@ import {
   cilScreenDesktop,
   cilInfo,
   cilX,
+  cilLan,
 } from "@coreui/icons"
 import "@coreui/coreui/dist/css/coreui.min.css"
 import "./Topology.css"
+
+// Ajout des styles pour le thème
+const themeStyles = {
+  card: {
+    backgroundColor: 'var(--cui-card-bg)',
+    color: 'var(--cui-card-color)',
+  },
+  header: {
+    backgroundColor: 'var(--cui-card-cap-bg)',
+    color: 'var(--cui-card-cap-color)',
+  },
+  text: {
+    color: 'var(--cui-body-color)',
+  },
+  muted: {
+    color: 'var(--cui-body-color-secondary)',
+  },
+  border: {
+    borderColor: 'var(--cui-border-color)',
+  },
+  background: {
+    backgroundColor: 'var(--cui-body-bg)',
+  }
+}
 
 const Topology = () => {
   const svgRef = useRef(null)
@@ -102,7 +127,7 @@ const Topology = () => {
         uniqueSuggestions.add({
           type: 'vlan',
           value: vlan,
-          icon: { path: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" }
+          icon: { path: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" }
         })
       }
     })
@@ -338,7 +363,13 @@ const Topology = () => {
 
   // Fonction pour obtenir l'icone selon le type d'appareil
   const getDeviceIcon = (deviceType) => {
-    switch (deviceType.toLowerCase()) {
+    // Si c'est un nœud VLAN, on retourne l'icône VLAN
+    if (deviceType === "vlan") {
+      return { path: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" }
+    }
+
+    // Pour les autres types d'appareils
+    switch (deviceType?.toLowerCase()) {
       case "router":
         return { path: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" }
       case "switch":
@@ -360,83 +391,117 @@ const Topology = () => {
 
   // Fonction pour filtrer les nœuds et liens selon la vue
   const filterNetworkData = (view, searchValue = searchTerm) => {
-    let nodes = [...networkData.nodes]
-    let links = [...networkData.links]
+    // On commence avec une copie profonde des données
+    let nodes = JSON.parse(JSON.stringify(networkData.nodes))
+    let links = JSON.parse(JSON.stringify(networkData.links))
+
+    // On arrete la simulation existante si elle existe
+    if (simulation) {
+      simulation.stop()
+      setSimulation(null)
+    }
 
     switch (view) {
       case "physical":
         // Vue physique : tous les équipements sont visibles
+        // Pas de filtrage nécessaire
         break
+
       case "logical":
-        // Vue logique : on ne montre que les équipements réseau (router, switch, ap)
+        // Vue logique : on ne montre que les équipements réseau
+        const networkDevices = ["router", "switch", "ap"]
         nodes = nodes.filter(node => 
-          ["router", "switch", "ap"].includes(node.deviceType.toLowerCase())
+          networkDevices.includes(node.deviceType.toLowerCase())
         )
-        // On garde uniquement les liens entre les équipements réseau
-        links = links.filter(link => {
-          const sourceNode = nodes.find(n => n.id === link.source)
-          const targetNode = nodes.find(n => n.id === link.target)
-          return sourceNode && targetNode
-        })
+        
+        // On filtre les liens pour ne garder que ceux entre équipements réseau
+        const validNodeIds = new Set(nodes.map(n => n.id))
+        links = links.filter(link => 
+          validNodeIds.has(link.source) && validNodeIds.has(link.target)
+        )
         break
+
       case "vlan":
         // Vue VLAN : on groupe les équipements par VLAN
-        // On crée des nœuds virtuels pour chaque VLAN
         const vlanGroups = {}
+        
+        // On crée d'abord les groupes VLAN
         nodes.forEach(node => {
-          if (!vlanGroups[node.stats.vlan]) {
-            vlanGroups[node.stats.vlan] = {
-              id: `vlan-${node.stats.vlan}`,
+          const vlan = node.stats.vlan
+          if (!vlanGroups[vlan]) {
+            vlanGroups[vlan] = {
+              id: `vlan-${vlan}`,
               type: "vlan",
-              name: node.stats.vlan,
-              status: "active",
-              vlan: node.stats.vlan,
+              hostname: `VLAN ${vlan}`,
+              stats: {
+                status: "active",
+                vlan: vlan
+              },
               devices: []
             }
           }
-          vlanGroups[node.stats.vlan].devices.push(node)
+          vlanGroups[vlan].devices.push(node)
         })
+
+        // On remplace les nœuds par les groupes VLAN
         nodes = Object.values(vlanGroups)
-        // On crée des liens virtuels entre les VLANs
-        links = []
-        const vlanConnections = new Set()
+
+        // On crée les liens entre VLANs
+        const vlanConnections = new Map()
         networkData.links.forEach(link => {
           const sourceNode = networkData.nodes.find(n => n.id === link.source)
           const targetNode = networkData.nodes.find(n => n.id === link.target)
+          
           if (sourceNode && targetNode && sourceNode.stats.vlan !== targetNode.stats.vlan) {
-            const connection = [sourceNode.stats.vlan, targetNode.stats.vlan].sort().join('-')
-            if (!vlanConnections.has(connection)) {
-              vlanConnections.add(connection)
-              links.push({
-                source: `vlan-${sourceNode.stats.vlan}`,
-                target: `vlan-${targetNode.stats.vlan}`,
+            const vlanPair = [sourceNode.stats.vlan, targetNode.stats.vlan].sort()
+            const key = vlanPair.join('-')
+            
+            if (!vlanConnections.has(key)) {
+              vlanConnections.set(key, {
+                source: `vlan-${vlanPair[0]}`,
+                target: `vlan-${vlanPair[1]}`,
                 type: "vlan",
                 bandwidth: "1Gbps"
               })
             }
           }
         })
+        
+        links = Array.from(vlanConnections.values())
         break
+
       default:
         break
     }
 
-    // Appliquer le filtre de recherche si necessaire
+    // Application du filtre de recherche si nécessaire
     if (searchValue) {
       const searchLower = searchValue.toLowerCase()
-      nodes = nodes.filter(node => 
-        node.hostname.toLowerCase().includes(searchLower) ||
-        node.deviceType.toLowerCase().includes(searchLower) ||
-        (node.stats && node.stats.vlan.toLowerCase().includes(searchLower))
-      )
-      // Filtrer les liens en consequence
-      links = links.filter(link => {
-        const sourceNode = nodes.find(n => n.id === link.source || n.id === `vlan-${link.source}`)
-        const targetNode = nodes.find(n => n.id === link.target || n.id === `vlan-${link.target}`)
-        return sourceNode && targetNode
+      const searchableNodes = nodes.filter(node => {
+        if (node.type === "vlan") {
+          return node.hostname.toLowerCase().includes(searchLower) ||
+                 node.stats.vlan.toLowerCase().includes(searchLower)
+        }
+        return node.hostname.toLowerCase().includes(searchLower) ||
+               node.deviceType.toLowerCase().includes(searchLower) ||
+               (node.stats && node.stats.vlan.toLowerCase().includes(searchLower))
       })
+
+      // On garde les IDs des nœuds filtrés
+      const validNodeIds = new Set(searchableNodes.map(n => n.id))
+      
+      // On filtre les liens en conséquence
+      const filteredLinks = links.filter(link => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target
+        return validNodeIds.has(sourceId) && validNodeIds.has(targetId)
+      })
+
+      nodes = searchableNodes
+      links = filteredLinks
     }
 
+    // On met à jour les états avec les nouvelles données filtrées
     setFilteredNodes(nodes)
     setFilteredLinks(links)
   }
@@ -450,29 +515,30 @@ const Topology = () => {
   useEffect(() => {
     if (!svgRef.current || loading) return
 
+    // Nettoyage du SVG existant
+    d3.select(svgRef.current).selectAll("*").remove()
+
     const width = svgRef.current.clientWidth
     const height = svgRef.current.clientHeight
 
-    // Nettoyage du SVG
-    d3.select(svgRef.current).selectAll("*").remove()
-
     // Creation du groupe principal
-    const g = d3.select(svgRef.current).append("g").attr("class", "topology-container")
+    const g = d3.select(svgRef.current)
+      .append("g")
+      .attr("class", "topology-container")
 
-    // Creation de la simulation de force
-    const sim = d3
-      .forceSimulation(filteredNodes)
+    // Creation de la simulation de force avec les nouvelles données
+    const sim = d3.forceSimulation(filteredNodes)
       .force(
         "link",
-        d3
-          .forceLink(filteredLinks)
-          .id((d) => d.id)
-          .distance(selectedView === "vlan" ? 200 : 100),
+        d3.forceLink(filteredLinks)
+          .id(d => d.id)
+          .distance(selectedView === "vlan" ? 200 : 100)
       )
       .force("charge", d3.forceManyBody().strength(-300))
       .force("center", d3.forceCenter(width / 2, height / 2))
       .force("collision", d3.forceCollide().radius(selectedView === "vlan" ? 80 : 50))
 
+    // On stocke la nouvelle simulation
     setSimulation(sim)
 
     // Creation des liens
@@ -557,12 +623,12 @@ const Topology = () => {
     node
       .append("g")
       .attr("class", "node-icon-container")
-      .style("pointer-events", "none") // On desactive les evenements sur l'icone
+      .style("pointer-events", "none")
       .append("foreignObject")
-      .attr("width", (d) => (d.deviceType === "vlan" ? 60 : 40))
-      .attr("height", (d) => (d.deviceType === "vlan" ? 60 : 40))
-      .attr("x", (d) => (d.deviceType === "vlan" ? -30 : -20))
-      .attr("y", (d) => (d.deviceType === "vlan" ? -30 : -20))
+      .attr("width", (d) => (d.type === "vlan" ? 60 : 40))
+      .attr("height", (d) => (d.type === "vlan" ? 60 : 40))
+      .attr("x", (d) => (d.type === "vlan" ? -30 : -20))
+      .attr("y", (d) => (d.type === "vlan" ? -30 : -20))
       .append("xhtml:div")
       .style("width", "100%")
       .style("height", "100%")
@@ -570,7 +636,7 @@ const Topology = () => {
       .style("align-items", "center")
       .style("justify-content", "center")
       .html((d) => {
-        if (d.deviceType === "vlan") {
+        if (d.type === "vlan") {
           return `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; color: white; font-weight: bold;">
             <span>VLAN</span>
             <span>${d.stats.vlan}</span>
@@ -616,11 +682,12 @@ const Topology = () => {
       node.attr("transform", (d) => `translate(${d.x},${d.y})`)
     })
 
-    // Nettoyage
+    // Nettoyage amélioré
     return () => {
-      if (simulation) simulation.stop()
-      // Nettoyage des evenements
-      d3.select(svgRef.current).on("click", null)
+      if (sim) {
+        sim.stop()
+      }
+      d3.select(svgRef.current).selectAll("*").remove()
     }
   }, [loading, selectedView, filteredNodes, filteredLinks])
 
@@ -648,11 +715,11 @@ const Topology = () => {
 
   return (
     <>
-      <CCard className="mb-4 topology-card">
-        <CCardHeader className="topology-header">
+      <CCard className="mb-4 topology-card" style={themeStyles.card}>
+        <CCardHeader className="topology-header" style={themeStyles.header}>
           <CRow className="align-items-center">
             <CCol xs="auto">
-              <h4 className="mb-0">Topologie du Réseau</h4>
+              <h4 className="mb-0" style={themeStyles.text}>Topologie du Réseau</h4>
             </CCol>
             <CCol xs="auto" className="ms-auto">
               <CButtonGroup>
@@ -688,20 +755,48 @@ const Topology = () => {
             </CCol>
           </CRow>
         </CCardHeader>
-        <CCardBody>
+        <CCardBody style={themeStyles.background}>
           <CRow className="mb-3">
-            <CCol md={4}>
-              <CFormSelect
-                value={selectedView}
-                onChange={(e) => setSelectedView(e.target.value)}
-                className="topology-select"
-              >
-                <option value="physical">Vue Physique</option>
-                <option value="logical">Vue Logique</option>
-                <option value="vlan">Vue par VLAN</option>
-              </CFormSelect>
+            <CCol md={5}>
+              <div className="d-flex flex-column">
+                <CButtonGroup className="view-selector">
+                  <CTooltip content="Vue Physique - Tous les équipements">
+                    <CButton
+                      color={selectedView === "physical" ? "primary" : "secondary"}
+                      variant={selectedView === "physical" ? "solid" : "outline"}
+                      onClick={() => setSelectedView("physical")}
+                      className="d-flex align-items-center justify-content-center gap-2 px-3"
+                    >
+                      <CIcon icon={cilDevices} size="sm" />
+                      <span>Physique</span>
+                    </CButton>
+                  </CTooltip>
+                  <CTooltip content="Vue Logique - Équipements réseau uniquement">
+                    <CButton
+                      color={selectedView === "logical" ? "primary" : "secondary"}
+                      variant={selectedView === "logical" ? "solid" : "outline"}
+                      onClick={() => setSelectedView("logical")}
+                      className="d-flex align-items-center justify-content-center gap-2 px-3"
+                    >
+                      <CIcon icon={cilLan} size="sm" />
+                      <span>Logique</span>
+                    </CButton>
+                  </CTooltip>
+                  <CTooltip content="Vue par VLAN - Groupement par VLAN">
+                    <CButton
+                      color={selectedView === "vlan" ? "primary" : "secondary"}
+                      variant={selectedView === "vlan" ? "solid" : "outline"}
+                      onClick={() => setSelectedView("vlan")}
+                      className="d-flex align-items-center justify-content-center gap-2 px-3"
+                    >
+                      <CIcon icon={cilSignalCellular4} size="sm" />
+                      <span>VLAN</span>
+                    </CButton>
+                  </CTooltip>
+                </CButtonGroup>
+              </div>
             </CCol>
-            <CCol md={8} className="position-relative" ref={searchInputRef}>
+            <CCol md={6} className="position-relative" ref={searchInputRef}>
               <CInputGroup>
                 <CInputGroupText>
                   <CIcon icon={cilFilter} />
@@ -792,12 +887,12 @@ const Topology = () => {
               <p>Chargement de la topologie...</p>
             </div>
           ) : (
-            <div className="topology-container">
-              <svg ref={svgRef} width="100%" height="600px" className="topology-svg" />
+            <div className="topology-container" style={themeStyles.background}>
+              <svg ref={svgRef} width="100%" height="600px" className="topology-svg" style={themeStyles.background} />
 
               {selectedNode && (
-                <div className="node-details-panel">
-                  <div className="node-details-header d-flex justify-content-between align-items-center p-2 border-bottom">
+                <div className="node-details-panel" style={{...themeStyles.card, ...themeStyles.border}}>
+                  <div className="node-details-header d-flex justify-content-between align-items-center p-2 border-bottom" style={themeStyles.header}>
                     <div className="d-flex align-items-center">
                       <CIcon 
                         icon={
@@ -843,7 +938,7 @@ const Topology = () => {
                     </div>
                   </div>
 
-                  <div className="node-details-content">
+                  <div className="node-details-content" style={themeStyles.background}>
                     {selectedNode.type === "vlan" ? (
                       <>
                         <div className="mb-3">
@@ -962,15 +1057,15 @@ const Topology = () => {
                           <CTabPane visible={activeTab === 'overview'}>
                             <div className="row g-2">
                               <div className="col-6">
-                                <small className="text-muted d-block">IP</small>
-                                <span>{selectedNode.ipAddress}</span>
+                                <small className="text-muted d-block" style={themeStyles.muted}>IP</small>
+                                <span style={themeStyles.text}>{selectedNode.ipAddress}</span>
                               </div>
                               <div className="col-6">
-                                <small className="text-muted d-block">VLAN</small>
-                                <span>{selectedNode.stats.vlan}</span>
+                                <small className="text-muted d-block" style={themeStyles.muted}>VLAN</small>
+                                <span style={themeStyles.text}>{selectedNode.stats.vlan}</span>
                               </div>
                               <div className="col-12 mt-2">
-                                <small className="text-muted d-block">CPU</small>
+                                <small className="text-muted d-block" style={themeStyles.muted}>CPU</small>
                                 <div className="d-flex align-items-center">
                                   <div className="flex-grow-1 me-2">
                                     <CProgress 
@@ -983,11 +1078,11 @@ const Topology = () => {
                                       className="mb-1"
                                     />
                                   </div>
-                                  <small>{selectedNode.stats.cpuUsage}%</small>
+                                  <small style={themeStyles.text}>{selectedNode.stats.cpuUsage}%</small>
                                 </div>
                               </div>
                               <div className="col-12">
-                                <small className="text-muted d-block">Mémoire</small>
+                                <small className="text-muted d-block" style={themeStyles.muted}>Mémoire</small>
                                 <div className="d-flex align-items-center">
                                   <div className="flex-grow-1 me-2">
                                     <CProgress 
@@ -1000,12 +1095,12 @@ const Topology = () => {
                                       className="mb-1"
                                     />
                                   </div>
-                                  <small>{selectedNode.stats.memoryUsage}%</small>
+                                  <small style={themeStyles.text}>{selectedNode.stats.memoryUsage}%</small>
                                 </div>
                               </div>
                               {selectedNode.connectedLinks && selectedNode.connectedLinks.length > 0 && (
                                 <div className="col-12 mt-2">
-                                  <small className="text-muted d-block">Connexions actives</small>
+                                  <small className="text-muted d-block" style={themeStyles.muted}>Connexions actives</small>
                                   <div className="list-group list-group-flush">
                                     {selectedNode.connectedLinks.slice(0, 3).map((link, index) => {
                                       const connectedNode = selectedNode.connectedNodes[index]
@@ -1026,7 +1121,7 @@ const Topology = () => {
                                               className="me-2"
                                               size="sm"
                                             />
-                                            <span className="text-truncate">
+                                            <span className="text-truncate" style={themeStyles.text}>
                                               {connectedNode?.type === "vlan" 
                                                 ? `VLAN ${connectedNode.vlan}`
                                                 : connectedNode?.hostname || "Inconnu"}
@@ -1052,16 +1147,16 @@ const Topology = () => {
                           <CTabPane visible={activeTab === 'system'}>
                             <div className="row g-2">
                               <div className="col-12">
-                                <small className="text-muted d-block">Système d'exploitation</small>
-                                <span>{selectedNode.os}</span>
+                                <small className="text-muted d-block" style={themeStyles.muted}>Système d'exploitation</small>
+                                <span style={themeStyles.text}>{selectedNode.os}</span>
                               </div>
                               <div className="col-12">
-                                <small className="text-muted d-block">Dernière vue</small>
-                                <span>{new Date(selectedNode.lastSeen).toLocaleString()}</span>
+                                <small className="text-muted d-block" style={themeStyles.muted}>Dernière vue</small>
+                                <span style={themeStyles.text}>{new Date(selectedNode.lastSeen).toLocaleString()}</span>
                               </div>
                               <div className="col-12">
-                                <small className="text-muted d-block">Première découverte</small>
-                                <span>{new Date(selectedNode.firstDiscovered).toLocaleString()}</span>
+                                <small className="text-muted d-block" style={themeStyles.muted}>Première découverte</small>
+                                <span style={themeStyles.text}>{new Date(selectedNode.firstDiscovered).toLocaleString()}</span>
                               </div>
                             </div>
                           </CTabPane>
@@ -1069,16 +1164,16 @@ const Topology = () => {
                           <CTabPane visible={activeTab === 'network'}>
                             <div className="row g-2">
                               <div className="col-12">
-                                <small className="text-muted d-block">Adresse MAC</small>
-                                <span>{selectedNode.macAddress}</span>
+                                <small className="text-muted d-block" style={themeStyles.muted}>Adresse MAC</small>
+                                <span style={themeStyles.text}>{selectedNode.macAddress}</span>
                               </div>
                               <div className="col-12">
-                                <small className="text-muted d-block">Bande passante</small>
-                                <span>{selectedNode.stats.bandwidth}</span>
+                                <small className="text-muted d-block" style={themeStyles.muted}>Bande passante</small>
+                                <span style={themeStyles.text}>{selectedNode.stats.bandwidth}</span>
                               </div>
                               {selectedNode.connectedLinks && selectedNode.connectedLinks.length > 0 && (
                                 <div className="col-12">
-                                  <small className="text-muted d-block">Toutes les connexions</small>
+                                  <small className="text-muted d-block" style={themeStyles.muted}>Toutes les connexions</small>
                                   <div className="list-group list-group-flush">
                                     {selectedNode.connectedLinks.map((link, index) => {
                                       const connectedNode = selectedNode.connectedNodes[index]
@@ -1101,7 +1196,7 @@ const Topology = () => {
                                             />
                                             <div className="flex-grow-1">
                                               <div className="d-flex align-items-center">
-                                                <span className="text-truncate">
+                                                <span className="text-truncate" style={themeStyles.text}>
                                                   {connectedNode?.type === "vlan" 
                                                     ? `VLAN ${connectedNode.vlan}`
                                                     : connectedNode?.hostname || "Inconnu"}
@@ -1134,8 +1229,8 @@ const Topology = () => {
             </div>
           )}
 
-          <div className="mt-3 topology-legend">
-            <h6>
+          <div className="mt-3 topology-legend" style={themeStyles.background}>
+            <h6 style={themeStyles.text}>
               <CIcon icon={cilInfo} className="me-2" />
               Légende :
             </h6>
@@ -1144,61 +1239,61 @@ const Topology = () => {
                 <div className="legend-icon router">
                   <CIcon icon={cilRouter} />
                 </div>
-                <span>Router</span>
+                <span style={themeStyles.text}>Router</span>
               </div>
               <div className="legend-item">
                 <div className="legend-icon switch">
                   <CIcon icon={cilStorage} />
                 </div>
-                <span>Switch</span>
+                <span style={themeStyles.text}>Switch</span>
               </div>
               <div className="legend-item">
                 <div className="legend-icon server">
                   <CIcon icon={cilDevices} />
                 </div>
-                <span>Serveur</span>
+                <span style={themeStyles.text}>Serveur</span>
               </div>
               <div className="legend-item">
                 <div className="legend-icon ap">
                   <CIcon icon={cilSignalCellular4} />
                 </div>
-                <span>Point d'accès</span>
+                <span style={themeStyles.text}>Point d'accès</span>
               </div>
               <div className="legend-item">
                 <div className="legend-icon laptop">
                   <CIcon icon={cilMonitor} />
                 </div>
-                <span>Portable</span>
+                <span style={themeStyles.text}>Portable</span>
               </div>
               <div className="legend-item">
                 <div className="legend-icon desktop">
                   <CIcon icon={cilScreenDesktop} />
                 </div>
-                <span>Ordinateur fixe</span>
+                <span style={themeStyles.text}>Ordinateur fixe</span>
               </div>
               <div className="legend-item">
                 <div className="legend-icon mobile">
                   <CIcon icon={cilDevices} />
                 </div>
-                <span>Mobile</span>
+                <span style={themeStyles.text}>Mobile</span>
               </div>
             </div>
             <div className="d-flex flex-wrap mt-2">
               <div className="legend-status">
                 <div className="legend-status-dot active"></div>
-                <span>Actif</span>
+                <span style={themeStyles.text}>Actif</span>
               </div>
               <div className="legend-status">
                 <div className="legend-status-dot warning"></div>
-                <span>Avertissement</span>
+                <span style={themeStyles.text}>Avertissement</span>
               </div>
               <div className="legend-status">
                 <div className="legend-status-dot danger"></div>
-                <span>Danger</span>
+                <span style={themeStyles.text}>Danger</span>
               </div>
               <div className="legend-status">
                 <div className="legend-status-dot inactive"></div>
-                <span>Inactif</span>
+                <span style={themeStyles.text}>Inactif</span>
               </div>
             </div>
           </div>

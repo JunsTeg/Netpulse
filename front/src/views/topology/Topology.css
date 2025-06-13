@@ -1,12 +1,14 @@
 .topology-card {
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   border-radius: 8px;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .topology-header {
   background-color: #f8f9fa;
   border-bottom: 1px solid #e9ecef;
   padding: 1rem;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .topology-container {
@@ -15,11 +17,13 @@
   background-color: #ffffff;
   border-radius: 4px;
   overflow: hidden;
+  transition: background-color 0.3s ease;
 }
 
 .topology-svg {
   background-color: #f8f9fa;
   border-radius: 4px;
+  transition: background-color 0.3s ease;
 }
 
 .node {
@@ -71,12 +75,15 @@
   box-shadow: 0 2px 10px rgba(0,0,0,0.1);
   z-index: 1000;
   overflow-y: auto;
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  box-shadow: var(--cui-card-box-shadow);
 }
 
 .node-details-header {
   background: #f8f9fa;
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
 .node-details-header h6 {
@@ -105,6 +112,7 @@
 .node-details-content {
   max-height: calc(100vh - 120px);
   overflow-y: auto;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .node-details-content strong {
@@ -137,6 +145,7 @@
 .badge {
   font-weight: 500;
   padding: 0.35em 0.65em;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Style pour les connexions */
@@ -162,6 +171,7 @@
   border-radius: 4px;
   margin-top: 1rem;
   border: 1px solid #e9ecef;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .topology-legend h6 {
@@ -179,6 +189,7 @@
 .node circle {
   fill: #ffffff;
   stroke-width: 2px;
+  transition: stroke 0.3s ease;
 }
 
 .node-icon {
@@ -217,7 +228,7 @@
 .legend-item {
   display: flex;
   align-items: center;
-  margin-right: 1.5rem;
+  margin-right: 1rem;
   margin-bottom: 0.5rem;
 }
 
@@ -225,59 +236,32 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin-right: 0.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #ffffff;
-  border: 2px solid;
+  background-color: #636f87 !important; /* Couleur gris-bleu uniforme */
 }
 
-.legend-icon i {
-  font-size: 18px !important;
-  color: #495057 !important;
+/* Forcer la couleur des icônes dans la légende */
+.legend-icon svg {
+  color: #ffffff !important;
+  fill: #ffffff !important;
 }
 
-.legend-icon.router {
-  border-color: #321fdb;
+.legend-icon svg path {
+  fill: #ffffff !important;
 }
 
-.legend-icon.switch {
-  border-color: #39f;
-}
-
-.legend-icon.server {
-  border-color: #e55353;
-}
-
-.legend-icon.ap {
-  border-color: #2eb85c;
-}
-
-.legend-icon.laptop {
-  border-color: #8a93a2;
-}
-
-.legend-icon.desktop {
-  border-color: #8a93a2;
-}
-
+/* Suppression des styles spécifiques pour chaque type d'icône */
+.legend-icon.router,
+.legend-icon.switch,
+.legend-icon.server,
+.legend-icon.ap,
+.legend-icon.laptop,
+.legend-icon.desktop,
 .legend-icon.mobile {
-  background-color: #ffffff;
-  border: 2px solid #495057;
-  color: #495057;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 8px;
-}
-
-.legend-icon.mobile svg {
-  width: 20px;
-  height: 20px;
+  background-color: #636f87 !important; /* Même couleur pour tous les types */
 }
 
 .legend-status {
@@ -294,19 +278,19 @@
 }
 
 .legend-status-dot.active {
-  background-color: #2eb85c;
+  background-color: #2eb85c !important; /* Vert pour actif */
 }
 
 .legend-status-dot.warning {
-  background-color: #f9b115;
+  background-color: #f9b115 !important; /* Orange pour avertissement */
 }
 
 .legend-status-dot.danger {
-  background-color: #e55353;
+  background-color: #e55353 !important; /* Rouge pour danger */
 }
 
 .legend-status-dot.inactive {
-  background-color: #8a93a2;
+  background-color: #8a93a2 !important; /* Gris pour inactif */
 }
 
 /* Responsive design */
@@ -498,4 +482,266 @@
 
 .node-details-panel .bg-light {
   background-color: #f8f9fa !important;
+}
+
+/* Styles pour le sélecteur de vue */
+.view-selector {
+  border-radius: 0.375rem;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  background-color: var(--cui-card-bg);
+  border: 1px solid var(--cui-border-color);
+}
+
+.view-selector .btn {
+  border: none;
+  transition: all 0.2s ease-in-out;
+  min-width: 120px;
+  height: 38px;
+  font-weight: 500;
+}
+
+.view-selector .btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.view-selector .btn:not(:last-child) {
+  border-right: 1px solid var(--cui-border-color);
+}
+
+.view-selector .btn-primary {
+  background-color: var(--cui-primary);
+  color: white;
+}
+
+.view-selector .btn-secondary {
+  background-color: var(--cui-secondary-bg);
+  color: var(--cui-body-color);
+}
+
+.view-selector .btn-outline-secondary {
+  border-color: var(--cui-border-color);
+}
+
+.view-selector .btn-outline-secondary:hover {
+  background-color: var(--cui-secondary-bg);
+  color: var(--cui-body-color);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .view-selector {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .view-selector .btn {
+    border-radius: 0 !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--cui-border-color);
+    width: 100%;
+  }
+  
+  .view-selector .btn:last-child {
+    border-bottom: none;
+  }
+}
+
+/* Animation pour le changement de vue */
+.view-selector .btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.view-selector .btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  border-radius: 100%;
+  transform: scale(1, 1) translate(-50%);
+  transform-origin: 50% 50%;
+}
+
+.view-selector .btn:active::after {
+  animation: ripple 0.6s ease-out;
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0, 0);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(20, 20);
+    opacity: 0;
+  }
+}
+
+/* Styles pour le thème */
+.topology-card {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.topology-header {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Styles pour le panneau de détails */
+.node-details-panel {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  box-shadow: var(--cui-card-box-shadow);
+}
+
+.node-details-header {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+.node-details-content {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Styles pour la légende */
+.topology-legend {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.legend-item span {
+  transition: color 0.3s ease;
+}
+
+.legend-status span {
+  transition: color 0.3s ease;
+}
+
+/* Conservation des couleurs spécifiques du graphe */
+.legend-status-dot.active {
+  background-color: #2eb85c !important; /* Vert pour actif */
+}
+
+.legend-status-dot.warning {
+  background-color: #f9b115 !important; /* Orange pour avertissement */
+}
+
+.legend-status-dot.danger {
+  background-color: #e55353 !important; /* Rouge pour danger */
+}
+
+.legend-status-dot.inactive {
+  background-color: #8a93a2 !important; /* Gris pour inactif */
+}
+
+/* Styles pour les nœuds du graphe */
+.node circle {
+  transition: stroke 0.3s ease;
+}
+
+.node text {
+  transition: fill 0.3s ease;
+}
+
+/* Styles pour les liens du graphe */
+.link {
+  transition: stroke 0.3s ease;
+}
+
+/* Styles pour les suggestions */
+.suggestions-container {
+  background-color: var(--cui-dropdown-bg) !important;
+  border-color: var(--cui-dropdown-border-color) !important;
+  box-shadow: var(--cui-dropdown-box-shadow) !important;
+}
+
+.suggestion-item {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.suggestion-item:hover {
+  background-color: var(--cui-dropdown-link-hover-bg) !important;
+}
+
+/* Styles pour les badges */
+.badge {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Styles pour les boutons */
+.btn {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+/* Styles pour les onglets */
+.nav-tabs {
+  border-color: var(--cui-border-color) !important;
+}
+
+.nav-tabs .nav-link {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+.nav-tabs .nav-link.active {
+  background-color: var(--cui-nav-tabs-link-active-bg) !important;
+  border-color: var(--cui-nav-tabs-link-active-border-color) !important;
+  color: var(--cui-nav-tabs-link-active-color) !important;
+}
+
+/* Styles pour les listes */
+.list-group-item {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+/* Styles pour les progress bars */
+.progress {
+  background-color: var(--cui-progress-bg) !important;
+}
+
+.progress-bar {
+  transition: background-color 0.3s ease;
+}
+
+/* Styles pour les tooltips */
+.tooltip {
+  --cui-tooltip-bg: var(--cui-tooltip-bg);
+  --cui-tooltip-color: var(--cui-tooltip-color);
+}
+
+/* Styles pour les inputs */
+.form-control {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+.form-control:focus {
+  background-color: var(--cui-input-focus-bg) !important;
+  border-color: var(--cui-input-focus-border-color) !important;
+  color: var(--cui-input-focus-color) !important;
+}
+
+/* Styles pour les groupes d'input */
+.input-group-text {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+/* Styles pour les icônes */
+.icon {
+  transition: color 0.3s ease;
+}
+
+/* Styles pour le conteneur SVG */
+.topology-svg {
+  transition: background-color 0.3s ease;
+}
+
+/* Styles pour le conteneur de recherche */
+.topology-search {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+/* Styles pour le conteneur principal */
+.topology-container {
+  transition: background-color 0.3s ease;
 } 
