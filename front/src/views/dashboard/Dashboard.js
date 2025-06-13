@@ -178,7 +178,7 @@ const Dashboard = () => {
                               <CProgress
                                 className="flex-grow-1 me-2"
                                 value={device.cpu}
-                                color={device.cpu > 90 ? 'danger' : 'warning'}
+                                color={device.cpu > 70 ? 'danger' : 'warning'}
                               />
                               <span className="ms-2 fw-semibold">{device.cpu}%</span>
                             </div>
