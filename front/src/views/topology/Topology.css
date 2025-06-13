@@ -1,0 +1,501 @@
+.topology-card {
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+}
+
+.topology-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  padding: 1rem;
+}
+
+.topology-container {
+  position: relative;
+  height: 600px;
+  background-color: #ffffff;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.topology-svg {
+  background-color: #f8f9fa;
+  border-radius: 4px;
+}
+
+.node {
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.node:hover circle {
+  stroke-width: 3px;
+  filter: brightness(1.1);
+}
+
+.node-label {
+  font-family: 'Segoe UI', sans-serif;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.link {
+  transition: stroke 0.3s ease;
+}
+
+.link:hover {
+  stroke: #0d6efd;
+  stroke-width: 3px;
+}
+
+.topology-select,
+.topology-search {
+  border-radius: 4px;
+  border: 1px solid #ced4da;
+  transition: border-color 0.15s ease-in-out;
+}
+
+.topology-select:focus,
+.topology-search:focus {
+  border-color: #86b7fe;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.node-details-panel {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 350px;
+  max-height: calc(100vh - 40px);
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  z-index: 1000;
+  overflow-y: auto;
+}
+
+.node-details-header {
+  background: #f8f9fa;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+.node-details-header h6 {
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.node-details-header small {
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.close-button {
+  position: absolute;
+  right: 0;
+  top: 0;
+  font-size: 24px;
+  line-height: 1;
+  padding: 0;
+  color: #8a93a2;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.node-details-content {
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+.node-details-content strong {
+  color: #4f5d73;
+}
+
+.device-icon, .connection-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8f9fa;
+  border-radius: 4px;
+  color: #495057;
+}
+
+.list-unstyled li {
+  padding: 8px;
+  border-radius: 4px;
+  background: #f8f9fa;
+  margin-bottom: 8px;
+}
+
+.list-unstyled li:last-child {
+  margin-bottom: 0;
+}
+
+/* Style pour les badges de statut */
+.badge {
+  font-weight: 500;
+  padding: 0.35em 0.65em;
+}
+
+/* Style pour les connexions */
+.connection-icon {
+  background: #e4e7ea;
+}
+
+/* Responsive design pour le panneau de détails */
+@media (max-width: 768px) {
+  .node-details-panel {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90%;
+    max-width: 300px;
+  }
+}
+
+.topology-legend {
+  background-color: #ffffff;
+  padding: 1rem;
+  border-radius: 4px;
+  margin-top: 1rem;
+  border: 1px solid #e9ecef;
+}
+
+.topology-legend h6 {
+  color: #495057;
+  margin-bottom: 0.5rem;
+}
+
+/* Animations */
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.node circle {
+  fill: #ffffff;
+  stroke-width: 2px;
+}
+
+.node-icon {
+  font-family: 'CoreUI-Icons-Free' !important;
+  font-size: 24px !important;
+  color: #495057 !important;
+  pointer-events: none;
+}
+
+.node-icon i {
+  font-size: inherit !important;
+  color: inherit !important;
+}
+
+.node.router circle {
+  stroke: #321fdb;
+}
+
+.node.switch circle {
+  stroke: #39f;
+}
+
+.node.server circle {
+  stroke: #e55353;
+}
+
+.node.ap circle {
+  stroke: #2eb85c;
+}
+
+.node.warning circle {
+  stroke: #f9b115;
+  animation: pulse 2s infinite;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  margin-right: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.legend-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #ffffff;
+  border: 2px solid;
+}
+
+.legend-icon i {
+  font-size: 18px !important;
+  color: #495057 !important;
+}
+
+.legend-icon.router {
+  border-color: #321fdb;
+}
+
+.legend-icon.switch {
+  border-color: #39f;
+}
+
+.legend-icon.server {
+  border-color: #e55353;
+}
+
+.legend-icon.ap {
+  border-color: #2eb85c;
+}
+
+.legend-icon.laptop {
+  border-color: #8a93a2;
+}
+
+.legend-icon.desktop {
+  border-color: #8a93a2;
+}
+
+.legend-icon.mobile {
+  background-color: #ffffff;
+  border: 2px solid #495057;
+  color: #495057;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+}
+
+.legend-icon.mobile svg {
+  width: 20px;
+  height: 20px;
+}
+
+.legend-status {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 1.5rem;
+}
+
+.legend-status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+}
+
+.legend-status-dot.active {
+  background-color: #2eb85c;
+}
+
+.legend-status-dot.warning {
+  background-color: #f9b115;
+}
+
+.legend-status-dot.danger {
+  background-color: #e55353;
+}
+
+.legend-status-dot.inactive {
+  background-color: #8a93a2;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .topology-container {
+    height: 400px;
+  }
+  
+  .topology-legend {
+    font-size: 0.9rem;
+  }
+}
+
+/* Styles pour la modale de détails */
+.node-details-panel {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 350px;
+  max-height: calc(100vh - 40px);
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  z-index: 1000;
+  overflow-y: auto;
+}
+
+.node-details-header {
+  background: #f8f9fa;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+.node-details-content {
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+/* Styles pour les onglets */
+.node-details-panel .nav-tabs {
+  border-bottom: 1px solid #dee2e6;
+  margin-bottom: 0;
+}
+
+.node-details-panel .nav-tabs .nav-link {
+  border: none;
+  color: #6c757d;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  border-bottom: 2px solid transparent;
+}
+
+.node-details-panel .nav-tabs .nav-link:hover {
+  border-color: transparent;
+  color: #343a40;
+}
+
+.node-details-panel .nav-tabs .nav-link.active {
+  color: #321fdb;
+  background: none;
+  border-bottom: 2px solid #321fdb;
+}
+
+.node-details-panel .tab-content {
+  padding: 0.75rem;
+}
+
+/* Styles pour les éléments de contenu */
+.node-details-panel .text-muted {
+  font-size: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.node-details-panel .progress {
+  height: 0.5rem;
+  margin-bottom: 0;
+}
+
+.node-details-panel .badge {
+  font-weight: 500;
+  padding: 0.35em 0.65em;
+  font-size: 0.75em;
+}
+
+.node-details-panel .list-group-item {
+  border: none;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  padding: 0.5rem 0;
+}
+
+.node-details-panel .list-group-item:last-child {
+  border-bottom: none;
+}
+
+.node-details-panel .close-button {
+  color: #6c757d;
+  text-decoration: none;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.node-details-panel .close-button:hover {
+  color: #343a40;
+  background: rgba(0,0,0,0.05);
+}
+
+/* Animation d'entrée pour la modale */
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.node-details-panel {
+  animation: slideIn 0.3s ease-out;
+}
+
+/* Style pour le scrollbar */
+.node-details-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.node-details-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 2px;
+}
+
+.node-details-content::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 2px;
+}
+
+.node-details-content::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Styles pour les icônes et badges */
+.node-details-panel .icon-sm {
+  width: 16px;
+  height: 16px;
+}
+
+.node-details-panel .text-truncate {
+  max-width: 150px;
+}
+
+/* Style pour le header */
+.node-details-header h6 {
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.node-details-header small {
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.node-details-panel .card {
+  border: 1px solid rgba(0,0,0,0.1);
+  box-shadow: none;
+  margin-bottom: 0;
+}
+
+.node-details-panel .card-header {
+  background: #f8f9fa;
+  border-bottom: 1px solid rgba(0,0,0,0.1);
+  padding: 0.5rem 1rem;
+}
+
+.node-details-panel .card-body {
+  padding: 0.75rem;
+}
+
+.node-details-panel .list-group-item {
+  border: none;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  padding: 0.5rem 0;
+}
+
+.node-details-panel .list-group-item:last-child {
+  border-bottom: none;
+}
+
+.node-details-panel .bg-light {
+  background-color: #f8f9fa !important;
+} 

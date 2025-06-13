@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from 'react'
+"use client"
+
+import { useState, useEffect, useRef } from "react"
+import * as d3 from "d3"
 import {
   CCard,
   CCardBody,
@@ -13,8 +16,14 @@ import {
   CFormInput,
   CProgress,
   CTooltip,
-} from '@coreui/react'
-import CIcon from '@coreui/icons-react'
+  CBadge,
+  CNav,
+  CNavItem,
+  CNavLink,
+  CTabContent,
+  CTabPane,
+} from "@coreui/react"
+import CIcon from "@coreui/icons-react"
 import {
   cilZoomIn,
   cilZoomOut,
@@ -23,14 +32,27 @@ import {
   cilFullscreen,
   cilDevices,
   cilRouter,
-  cilChartPie,
-} from '@coreui/icons'
+  cilStorage,
+  cilSignalCellular4,
+  cilMonitor,
+  cilScreenDesktop,
+  cilInfo,
+} from "@coreui/icons"
+import "@coreui/coreui/dist/css/coreui.min.css"
+import "./Topology.css"
 
 const Topology = () => {
-  const [zoom, setZoom] = useState(100)
-  const [selectedView, setSelectedView] = useState('physical')
-  const [searchTerm, setSearchTerm] = useState('')
+  const svgRef = useRef(null)
+  const [zoom, setZoom] = useState(1)
+  const [selectedView, setSelectedView] = useState("physical")
+  const [searchTerm, setSearchTerm] = useState("")
   const [loading, setLoading] = useState(true)
+  const [selectedNode, setSelectedNode] = useState(null)
+  const [simulation, setSimulation] = useState(null)
+  const [filteredNodes, setFilteredNodes] = useState([])
+  const [filteredLinks, setFilteredLinks] = useState([])
+  const [showDetails, setShowDetails] = useState(false)
+  const [activeTab, setActiveTab] = useState('overview')
 
   // Simuler le chargement des donnees
   useEffect(() => {
@@ -43,72 +65,479 @@ const Topology = () => {
   // Donnees de test pour la topologie
   const networkData = {
     nodes: [
-      { id: 1, type: 'router', name: 'Router-Core', x: 50, y: 50, status: 'active' },
-      { id: 2, type: 'switch', name: 'Switch-Acces-01', x: 150, y: 100, status: 'active' },
-      { id: 3, type: 'switch', name: 'Switch-Acces-02', x: 150, y: 200, status: 'warning' },
-      { id: 4, type: 'ap', name: 'AP-Wifi-01', x: 250, y: 150, status: 'active' },
-      { id: 5, type: 'server', name: 'Server-01', x: 50, y: 150, status: 'active' },
+      { 
+        id: "1", 
+        hostname: "Router-Core",
+        ipAddress: "192.168.1.1",
+        macAddress: "00:1A:2B:3C:4D:5E",
+        os: "RouterOS",
+        deviceType: "router",
+        stats: {
+          status: "active",
+          vlan: "VLAN1",
+          bandwidth: "1Gbps",
+          cpuUsage: 45,
+          memoryUsage: 60
+        },
+        lastSeen: new Date().toISOString(),
+        firstDiscovered: "2024-01-01T00:00:00Z"
+      },
+      { 
+        id: "2", 
+        hostname: "Switch-Acces-01",
+        ipAddress: "192.168.1.2",
+        macAddress: "00:1A:2B:3C:4D:5F",
+        os: "SwitchOS",
+        deviceType: "switch",
+        stats: {
+          status: "active",
+          vlan: "VLAN1",
+          bandwidth: "1Gbps",
+          cpuUsage: 30,
+          memoryUsage: 45
+        },
+        lastSeen: new Date().toISOString(),
+        firstDiscovered: "2024-01-01T00:00:00Z"
+      },
+      { 
+        id: "3", 
+        hostname: "Switch-Acces-02",
+        ipAddress: "192.168.1.3",
+        macAddress: "00:1A:2B:3C:4D:60",
+        os: "SwitchOS",
+        deviceType: "switch",
+        stats: {
+          status: "warning",
+          vlan: "VLAN2",
+          bandwidth: "1Gbps",
+          cpuUsage: 75,
+          memoryUsage: 80
+        },
+        lastSeen: new Date().toISOString(),
+        firstDiscovered: "2024-01-01T00:00:00Z"
+      },
+      { 
+        id: "4", 
+        hostname: "AP-Wifi-01",
+        ipAddress: "192.168.1.4",
+        macAddress: "00:1A:2B:3C:4D:61",
+        os: "AP-OS",
+        deviceType: "ap",
+        stats: {
+          status: "danger",
+          vlan: "VLAN1",
+          bandwidth: "300Mbps",
+          cpuUsage: 90,
+          memoryUsage: 85
+        },
+        lastSeen: new Date().toISOString(),
+        firstDiscovered: "2024-01-01T00:00:00Z"
+      },
+      { 
+        id: "5", 
+        hostname: "Server-01",
+        ipAddress: "192.168.1.5",
+        macAddress: "00:1A:2B:3C:4D:62",
+        os: "Ubuntu Server 22.04",
+        deviceType: "server",
+        stats: {
+          status: "inactive",
+          vlan: "VLAN3",
+          bandwidth: "1Gbps",
+          cpuUsage: 0,
+          memoryUsage: 0
+        },
+        lastSeen: "2024-01-01T00:00:00Z",
+        firstDiscovered: "2024-01-01T00:00:00Z"
+      },
+      { 
+        id: "6", 
+        hostname: "Smartphone-01",
+        ipAddress: "192.168.1.6",
+        macAddress: "00:1A:2B:3C:4D:63",
+        os: "Android 13",
+        deviceType: "mobile",
+        stats: {
+          status: "active",
+          vlan: "VLAN1",
+          bandwidth: "150Mbps",
+          cpuUsage: 20,
+          memoryUsage: 35
+        },
+        lastSeen: new Date().toISOString(),
+        firstDiscovered: "2024-01-01T00:00:00Z"
+      }
     ],
     links: [
-      { source: 1, target: 2, type: 'gigabit' },
-      { source: 1, target: 3, type: 'gigabit' },
-      { source: 2, target: 4, type: 'wifi' },
-      { source: 1, target: 5, type: 'gigabit' },
-    ],
-  }
-
-  // Fonction pour obtenir l'icone selon le type d'appareil
-  const getDeviceIcon = (type) => {
-    switch (type.toLowerCase()) {
-      case 'server':
-        return cilDevices
-      case 'router':
-        return cilDevices
-      case 'switch':
-        return cilChartPie
-      case 'ap':
-        return cilChartPie
-      default:
-        return cilDevices
-    }
+      { source: "1", target: "2", type: "gigabit", bandwidth: "1Gbps" },
+      { source: "1", target: "3", type: "gigabit", bandwidth: "1Gbps" },
+      { source: "2", target: "4", type: "wifi", bandwidth: "300Mbps" },
+      { source: "1", target: "5", type: "gigabit", bandwidth: "1Gbps" },
+      { source: "4", target: "6", type: "wifi", bandwidth: "150Mbps" }
+    ]
   }
 
   // Fonction pour obtenir la couleur selon le statut
   const getStatusColor = (status) => {
     switch (status) {
-      case 'active':
-        return 'success'
-      case 'warning':
-        return 'warning'
-      case 'inactive':
-        return 'danger'
+      case "active":
+        return "#2eb85c" // success (vert)
+      case "warning":
+        return "#f9b115" // warning (orange)
+      case "danger":
+        return "#e55353" // danger (rouge)
+      case "inactive":
+        return "#8a93a2" // secondary (gris)
       default:
-        return 'secondary'
+        return "#8a93a2" // secondary (gris)
     }
+  }
+
+  // Fonction pour obtenir l'icone selon le type d'appareil
+  const getDeviceIcon = (deviceType) => {
+    switch (deviceType.toLowerCase()) {
+      case "router":
+        return { path: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" }
+      case "switch":
+        return { path: "M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" }
+      case "server":
+        return { path: "M4 1h16c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V3c0-1.1.9-2 2-2zm0 2v4h16V3H4zm0 7h16c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2v-4c0-1.1.9-2 2-2zm0 2v4h16v-4H4zm0 7h16c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2v-4c0-1.1.9-2 2-2zm0 2v4h16v-4H4z" }
+      case "ap":
+        return { path: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" }
+      case "laptop":
+        return { path: "M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z" }
+      case "desktop":
+        return { path: "M21 2H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h7v2H8v2h8v-2h-2v-2h7c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H3V4h18v12z" }
+      case "mobile":
+        return { path: "M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z" }
+      default:
+        return { path: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" }
+    }
+  }
+
+  // Fonction pour filtrer les nœuds et liens selon la vue
+  const filterNetworkData = (view) => {
+    let nodes = [...networkData.nodes]
+    let links = [...networkData.links]
+
+    switch (view) {
+      case "physical":
+        // Vue physique : tous les équipements sont visibles
+        break
+      case "logical":
+        // Vue logique : on ne montre que les équipements réseau (router, switch, ap)
+        nodes = nodes.filter(node => 
+          ["router", "switch", "ap"].includes(node.deviceType.toLowerCase())
+        )
+        // On garde uniquement les liens entre les équipements réseau
+        links = links.filter(link => {
+          const sourceNode = nodes.find(n => n.id === link.source)
+          const targetNode = nodes.find(n => n.id === link.target)
+          return sourceNode && targetNode
+        })
+        break
+      case "vlan":
+        // Vue VLAN : on groupe les équipements par VLAN
+        // On crée des nœuds virtuels pour chaque VLAN
+        const vlanGroups = {}
+        nodes.forEach(node => {
+          if (!vlanGroups[node.stats.vlan]) {
+            vlanGroups[node.stats.vlan] = {
+              id: `vlan-${node.stats.vlan}`,
+              type: "vlan",
+              name: node.stats.vlan,
+              status: "active",
+              vlan: node.stats.vlan,
+              devices: []
+            }
+          }
+          vlanGroups[node.stats.vlan].devices.push(node)
+        })
+        nodes = Object.values(vlanGroups)
+        // On crée des liens virtuels entre les VLANs
+        links = []
+        const vlanConnections = new Set()
+        networkData.links.forEach(link => {
+          const sourceNode = networkData.nodes.find(n => n.id === link.source)
+          const targetNode = networkData.nodes.find(n => n.id === link.target)
+          if (sourceNode && targetNode && sourceNode.stats.vlan !== targetNode.stats.vlan) {
+            const connection = [sourceNode.stats.vlan, targetNode.stats.vlan].sort().join('-')
+            if (!vlanConnections.has(connection)) {
+              vlanConnections.add(connection)
+              links.push({
+                source: `vlan-${sourceNode.stats.vlan}`,
+                target: `vlan-${targetNode.stats.vlan}`,
+                type: "vlan",
+                bandwidth: "1Gbps"
+              })
+            }
+          }
+        })
+        break
+      default:
+        break
+    }
+
+    // Appliquer le filtre de recherche si nécessaire
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase()
+      nodes = nodes.filter(node => 
+        node.hostname.toLowerCase().includes(searchLower) ||
+        node.deviceType.toLowerCase().includes(searchLower) ||
+        (node.stats && node.stats.vlan.toLowerCase().includes(searchLower))
+      )
+      // Filtrer les liens en conséquence
+      links = links.filter(link => {
+        const sourceNode = nodes.find(n => n.id === link.source || n.id === `vlan-${link.source}`)
+        const targetNode = nodes.find(n => n.id === link.target || n.id === `vlan-${link.target}`)
+        return sourceNode && targetNode
+      })
+    }
+
+    setFilteredNodes(nodes)
+    setFilteredLinks(links)
+  }
+
+  // Mettre à jour les filtres quand la vue ou la recherche change
+  useEffect(() => {
+    filterNetworkData(selectedView)
+  }, [selectedView, searchTerm])
+
+  // Initialisation du graphique D3
+  useEffect(() => {
+    if (!svgRef.current || loading) return
+
+    const width = svgRef.current.clientWidth
+    const height = svgRef.current.clientHeight
+
+    // Nettoyage du SVG
+    d3.select(svgRef.current).selectAll("*").remove()
+
+    // Creation du groupe principal
+    const g = d3.select(svgRef.current).append("g").attr("class", "topology-container")
+
+    // Creation de la simulation de force
+    const sim = d3
+      .forceSimulation(filteredNodes)
+      .force(
+        "link",
+        d3
+          .forceLink(filteredLinks)
+          .id((d) => d.id)
+          .distance(selectedView === "vlan" ? 200 : 100),
+      )
+      .force("charge", d3.forceManyBody().strength(-300))
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("collision", d3.forceCollide().radius(selectedView === "vlan" ? 80 : 50))
+
+    setSimulation(sim)
+
+    // Creation des liens
+    const link = g
+      .append("g")
+      .selectAll("line")
+      .data(filteredLinks)
+      .enter()
+      .append("line")
+      .attr("class", "link")
+      .style("stroke", "#6c757d")
+      .style("stroke-width", 2)
+      .style("stroke-dasharray", (d) => (d.type === "wifi" ? "5,5" : d.type === "vlan" ? "10,5" : "0"))
+
+    // Creation des noeuds
+    const node = g
+      .append("g")
+      .selectAll(".node")
+      .data(filteredNodes)
+      .enter()
+      .append("g")
+      .attr("class", (d) => `node ${d.deviceType}`)
+
+    // Ajout des cercles pour les noeuds
+    const circles = node
+      .append("circle")
+      .attr("r", (d) => (d.deviceType === "vlan" ? 40 : 25))
+      .style("fill", (d) => getStatusColor(d.stats.status))
+      .style("stroke-width", "2px")
+      .style("stroke", "#ffffff")
+      .style("cursor", "pointer")
+
+    // Gestion du clic sur les cercles
+    circles.on("mousedown", function(event, d) {
+      event.stopPropagation()
+      const connectedLinks = getConnectedLinks(d.id)
+      const connectedNodes = getConnectedNodes(d.id)
+      setSelectedNode({
+        ...d,
+        connectedLinks,
+        connectedNodes
+      })
+    })
+
+    // Configuration du zoom
+    const zoomBehavior = d3
+      .zoom()
+      .scaleExtent([0.1, 4])
+      .on("zoom", (event) => {
+        g.attr("transform", event.transform)
+        setZoom(event.transform.k)
+      })
+
+    d3.select(svgRef.current).call(zoomBehavior)
+
+    // Ajout du drag
+    node.call(
+      d3.drag()
+        .on("start", (event, d) => {
+          event.sourceEvent.stopPropagation()
+          if (!event.active) sim.alphaTarget(0.3).restart()
+          d.fx = d.x
+          d.fy = d.y
+        })
+        .on("drag", (event, d) => {
+          event.sourceEvent.stopPropagation()
+          d.fx = event.x
+          d.fy = event.y
+        })
+        .on("end", (event, d) => {
+          event.sourceEvent.stopPropagation()
+          if (!event.active) sim.alphaTarget(0)
+          d.fx = null
+          d.fy = null
+        })
+    )
+
+    // Ajout des icones
+    node
+      .append("g")
+      .attr("class", "node-icon-container")
+      .style("pointer-events", "none") // On desactive les evenements sur l'icone
+      .append("foreignObject")
+      .attr("width", (d) => (d.deviceType === "vlan" ? 60 : 40))
+      .attr("height", (d) => (d.deviceType === "vlan" ? 60 : 40))
+      .attr("x", (d) => (d.deviceType === "vlan" ? -30 : -20))
+      .attr("y", (d) => (d.deviceType === "vlan" ? -30 : -20))
+      .append("xhtml:div")
+      .style("width", "100%")
+      .style("height", "100%")
+      .style("display", "flex")
+      .style("align-items", "center")
+      .style("justify-content", "center")
+      .html((d) => {
+        if (d.deviceType === "vlan") {
+          return `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; color: white; font-weight: bold;">
+            <span>VLAN</span>
+            <span>${d.stats.vlan}</span>
+            <span style="font-size: 0.8em;">(${d.devices.length} appareils)</span>
+          </div>`
+        }
+        const icon = getDeviceIcon(d.deviceType)
+        return `<div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="${icon.path}" fill="#ffffff"/>
+          </svg>
+        </div>`
+      })
+
+    // Ajout des labels
+    node
+      .append("text")
+      .attr("class", "node-label")
+      .attr("dy", (d) => (d.deviceType === "vlan" ? 55 : 40))
+      .attr("text-anchor", "middle")
+      .text((d) => d.hostname)
+      .style("font-size", (d) => (d.deviceType === "vlan" ? "14px" : "12px"))
+      .style("fill", "#666")
+      .style("pointer-events", "none") // On desactive les evenements sur le label
+
+    // Gestionnaire de clic sur le SVG pour fermer le panneau
+    d3.select(svgRef.current)
+      .on("click", (event) => {
+        // On ferme le panneau uniquement si on clique sur le fond
+        if (event.target === svgRef.current || event.target.tagName === 'svg') {
+          setSelectedNode(null)
+        }
+      })
+
+    // Mise a jour de la simulation
+    sim.on("tick", () => {
+      link
+        .attr("x1", (d) => d.source.x)
+        .attr("y1", (d) => d.source.y)
+        .attr("x2", (d) => d.target.x)
+        .attr("y2", (d) => d.target.y)
+
+      node.attr("transform", (d) => `translate(${d.x},${d.y})`)
+    })
+
+    // Nettoyage
+    return () => {
+      if (simulation) simulation.stop()
+      // Nettoyage des evenements
+      d3.select(svgRef.current).on("click", null)
+    }
+  }, [loading, selectedView, filteredNodes, filteredLinks])
+
+  // Fonction pour obtenir les liens connectés à un nœud
+  const getConnectedLinks = (nodeId) => {
+    return filteredLinks.filter(link => 
+      link.source.id === nodeId || link.target.id === nodeId ||
+      link.source === nodeId || link.target === nodeId
+    )
+  }
+
+  // Fonction pour obtenir les nœuds connectés
+  const getConnectedNodes = (nodeId) => {
+    const links = getConnectedLinks(nodeId)
+    return links.map(link => {
+      const connectedId = link.source.id === nodeId || link.source === nodeId ? link.target : link.source
+      return filteredNodes.find(n => n.id === connectedId || n.id === `vlan-${connectedId}`)
+    }).filter(Boolean)
+  }
+
+  // Fonction pour formater la bande passante
+  const formatBandwidth = (bandwidth) => {
+    return bandwidth.replace('bps', 'bits/s')
   }
 
   return (
     <>
-      <CCard className="mb-4">
-        <CCardHeader>
+      <CCard className="mb-4 topology-card">
+        <CCardHeader className="topology-header">
           <CRow className="align-items-center">
             <CCol xs="auto">
-              <h4 className="mb-0">Topologie du Reseau</h4>
+              <h4 className="mb-0">Topologie du Réseau</h4>
             </CCol>
             <CCol xs="auto" className="ms-auto">
               <CButtonGroup>
-                <CButton color="primary" variant="outline" onClick={() => setZoom(Math.min(zoom + 10, 200))}>
-                  <CIcon icon={cilZoomIn} />
-                </CButton>
-                <CButton color="primary" variant="outline" onClick={() => setZoom(Math.max(zoom - 10, 50))}>
-                  <CIcon icon={cilZoomOut} />
-                </CButton>
-                <CButton color="primary" variant="outline">
-                  <CIcon icon={cilReload} />
-                </CButton>
-                <CButton color="primary" variant="outline">
-                  <CIcon icon={cilFullscreen} />
-                </CButton>
+                <CTooltip content="Zoom avant">
+                  <CButton color="primary" variant="outline" onClick={() => setZoom((prev) => Math.min(prev + 0.1, 4))}>
+                    <CIcon icon={cilZoomIn} />
+                  </CButton>
+                </CTooltip>
+                <CTooltip content="Zoom arrière">
+                  <CButton
+                    color="primary"
+                    variant="outline"
+                    onClick={() => setZoom((prev) => Math.max(prev - 0.1, 0.1))}
+                  >
+                    <CIcon icon={cilZoomOut} />
+                  </CButton>
+                </CTooltip>
+                <CTooltip content="Actualiser">
+                  <CButton color="primary" variant="outline" onClick={() => window.location.reload()}>
+                    <CIcon icon={cilReload} />
+                  </CButton>
+                </CTooltip>
+                <CTooltip content="Plein écran">
+                  <CButton
+                    color="primary"
+                    variant="outline"
+                    onClick={() => document.documentElement.requestFullscreen()}
+                  >
+                    <CIcon icon={cilFullscreen} />
+                  </CButton>
+                </CTooltip>
               </CButtonGroup>
             </CCol>
           </CRow>
@@ -119,12 +548,12 @@ const Topology = () => {
               <CFormSelect
                 value={selectedView}
                 onChange={(e) => setSelectedView(e.target.value)}
-                options={[
-                  { label: 'Vue Physique', value: 'physical' },
-                  { label: 'Vue Logique', value: 'logical' },
-                  { label: 'Vue par VLAN', value: 'vlan' },
-                ]}
-              />
+                className="topology-select"
+              >
+                <option value="physical">Vue Physique</option>
+                <option value="logical">Vue Logique</option>
+                <option value="vlan">Vue par VLAN</option>
+              </CFormSelect>
             </CCol>
             <CCol md={8}>
               <CInputGroup>
@@ -135,6 +564,7 @@ const Topology = () => {
                   placeholder="Rechercher un appareil..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
+                  className="topology-search"
                 />
               </CInputGroup>
             </CCol>
@@ -146,77 +576,415 @@ const Topology = () => {
               <p>Chargement de la topologie...</p>
             </div>
           ) : (
-            <div
-              style={{
-                height: '600px',
-                border: '1px solid #d8dbe0',
-                borderRadius: '4px',
-                position: 'relative',
-                overflow: 'hidden',
-                transform: `scale(${zoom / 100})`,
-                transformOrigin: 'top left',
-              }}
-            >
-              {/* Simulation de la visualisation du reseau */}
-              <svg width="100%" height="100%">
-                {/* Lignes de connexion */}
-                {networkData.links.map((link, index) => (
-                  <line
-                    key={index}
-                    x1={networkData.nodes[link.source - 1].x}
-                    y1={networkData.nodes[link.source - 1].y}
-                    x2={networkData.nodes[link.target - 1].x}
-                    y2={networkData.nodes[link.target - 1].y}
-                    stroke="#6c757d"
-                    strokeWidth="2"
-                  />
-                ))}
-                {/* Noeuds */}
-                {networkData.nodes.map((node) => (
-                  <g key={node.id} transform={`translate(${node.x},${node.y})`}>
-                    <circle
-                      r="20"
-                      fill={getStatusColor(node.status)}
-                      stroke="#fff"
-                      strokeWidth="2"
-                    />
-                    <CTooltip content={`${node.name} (${node.status})`}>
-                      <CIcon
-                        icon={getDeviceIcon(node.type)}
+            <div className="topology-container">
+              <svg ref={svgRef} width="100%" height="600px" className="topology-svg" />
+
+              {selectedNode && (
+                <div className="node-details-panel">
+                  <div className="node-details-header d-flex justify-content-between align-items-center p-2 border-bottom">
+                    <div className="d-flex align-items-center">
+                      <CIcon 
+                        icon={
+                          selectedNode.type === "vlan" ? cilSignalCellular4 :
+                          selectedNode.deviceType === "router" ? cilRouter :
+                          selectedNode.deviceType === "switch" ? cilStorage :
+                          selectedNode.deviceType === "server" ? cilDevices :
+                          selectedNode.deviceType === "ap" ? cilSignalCellular4 :
+                          selectedNode.deviceType === "laptop" ? cilMonitor :
+                          selectedNode.deviceType === "desktop" ? cilScreenDesktop :
+                          cilDevices
+                        }
+                        className="me-2"
                         size="xl"
-                        className="text-white"
-                        style={{ position: 'absolute', top: '-10px', left: '-10px' }}
                       />
-                    </CTooltip>
-                  </g>
-                ))}
-              </svg>
+                      <div>
+                        <h6 className="mb-0">{selectedNode.hostname}</h6>
+                        <small className="text-muted">{selectedNode.deviceType}</small>
+                      </div>
+                    </div>
+                    <div className="d-flex align-items-center">
+                      <CBadge
+                        color={
+                          getStatusColor(selectedNode.stats.status) === "#2eb85c"
+                            ? "success"
+                            : getStatusColor(selectedNode.stats.status) === "#f9b115"
+                              ? "warning"
+                              : getStatusColor(selectedNode.stats.status) === "#e55353"
+                                ? "danger"
+                                : "secondary"
+                        }
+                        className="me-2"
+                      >
+                        {selectedNode.stats.status}
+                      </CBadge>
+                      <CButton
+                        color="link"
+                        className="close-button p-0"
+                        onClick={() => setSelectedNode(null)}
+                      >
+                        <CIcon icon={cilInfo} size="lg" />
+                      </CButton>
+                    </div>
+                  </div>
+
+                  <div className="node-details-content">
+                    {selectedNode.type === "vlan" ? (
+                      <>
+                        <div className="mb-3">
+                          <strong>Statut:</strong>
+                          <CBadge
+                            color={
+                              getStatusColor(selectedNode.status) === "#2eb85c"
+                                ? "success"
+                                : getStatusColor(selectedNode.status) === "#f9b115"
+                                  ? "warning"
+                                  : getStatusColor(selectedNode.status) === "#e55353"
+                                    ? "danger"
+                                    : "secondary"
+                            }
+                            className="ms-2"
+                          >
+                            {selectedNode.status}
+                          </CBadge>
+                        </div>
+                        <div className="mb-3">
+                          <strong>Nombre d'appareils:</strong> {selectedNode.devices?.length || 0}
+                        </div>
+                        {selectedNode.devices && (
+                          <div className="mb-3">
+                            <strong>Appareils connectés:</strong>
+                            <ul className="list-unstyled mt-2">
+                              {selectedNode.devices.map((device, index) => (
+                                <li key={index} className="mb-2">
+                                  <div className="d-flex align-items-center">
+                                    <CIcon 
+                                      icon={
+                                        device.deviceType === "router" ? cilRouter :
+                                        device.deviceType === "switch" ? cilStorage :
+                                        device.deviceType === "server" ? cilDevices :
+                                        device.deviceType === "ap" ? cilSignalCellular4 :
+                                        device.deviceType === "laptop" ? cilMonitor :
+                                        device.deviceType === "desktop" ? cilScreenDesktop :
+                                        cilDevices
+                                      }
+                                      className="me-2"
+                                    />
+                                    <span>{device.hostname}</span>
+                                    <CBadge
+                                      color={
+                                        getStatusColor(device.status) === "#2eb85c"
+                                          ? "success"
+                                          : getStatusColor(device.status) === "#f9b115"
+                                            ? "warning"
+                                            : getStatusColor(device.status) === "#e55353"
+                                              ? "danger"
+                                              : "secondary"
+                                      }
+                                      className="ms-2"
+                                    >
+                                      {device.status}
+                                    </CBadge>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {selectedNode.connectedLinks && selectedNode.connectedLinks.length > 0 && (
+                          <div className="mb-3">
+                            <strong>Connexions avec autres VLANs:</strong>
+                            <ul className="list-unstyled mt-2">
+                              {selectedNode.connectedNodes.map((node, index) => {
+                                if (node.deviceType === "vlan") {
+                                  return (
+                                    <li key={index} className="mb-2">
+                                      <div className="d-flex align-items-center">
+                                        <span>VLAN {node.stats.vlan}</span>
+                                        <CBadge color="info" className="ms-2">
+                                          {selectedNode.connectedLinks[index].bandwidth}
+                                        </CBadge>
+                                      </div>
+                                    </li>
+                                  )
+                                }
+                                return null
+                              })}
+                            </ul>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <CNav variant="tabs" className="px-2 pt-2">
+                          <CNavItem>
+                            <CNavLink
+                              active={activeTab === 'overview'}
+                              onClick={() => setActiveTab('overview')}
+                            >
+                              Vue d'ensemble
+                            </CNavLink>
+                          </CNavItem>
+                          <CNavItem>
+                            <CNavLink
+                              active={activeTab === 'system'}
+                              onClick={() => setActiveTab('system')}
+                            >
+                              Système
+                            </CNavLink>
+                          </CNavItem>
+                          <CNavItem>
+                            <CNavLink
+                              active={activeTab === 'network'}
+                              onClick={() => setActiveTab('network')}
+                            >
+                              Réseau
+                            </CNavLink>
+                          </CNavItem>
+                        </CNav>
+
+                        <CTabContent className="p-2">
+                          <CTabPane visible={activeTab === 'overview'}>
+                            <div className="row g-2">
+                              <div className="col-6">
+                                <small className="text-muted d-block">IP</small>
+                                <span>{selectedNode.ipAddress}</span>
+                              </div>
+                              <div className="col-6">
+                                <small className="text-muted d-block">VLAN</small>
+                                <span>{selectedNode.stats.vlan}</span>
+                              </div>
+                              <div className="col-12 mt-2">
+                                <small className="text-muted d-block">CPU</small>
+                                <div className="d-flex align-items-center">
+                                  <div className="flex-grow-1 me-2">
+                                    <CProgress 
+                                      value={selectedNode.stats.cpuUsage} 
+                                      color={
+                                        selectedNode.stats.cpuUsage > 80 ? "danger" :
+                                        selectedNode.stats.cpuUsage > 60 ? "warning" :
+                                        "success"
+                                      }
+                                      className="mb-1"
+                                    />
+                                  </div>
+                                  <small>{selectedNode.stats.cpuUsage}%</small>
+                                </div>
+                              </div>
+                              <div className="col-12">
+                                <small className="text-muted d-block">Mémoire</small>
+                                <div className="d-flex align-items-center">
+                                  <div className="flex-grow-1 me-2">
+                                    <CProgress 
+                                      value={selectedNode.stats.memoryUsage} 
+                                      color={
+                                        selectedNode.stats.memoryUsage > 80 ? "danger" :
+                                        selectedNode.stats.memoryUsage > 60 ? "warning" :
+                                        "success"
+                                      }
+                                      className="mb-1"
+                                    />
+                                  </div>
+                                  <small>{selectedNode.stats.memoryUsage}%</small>
+                                </div>
+                              </div>
+                              {selectedNode.connectedLinks && selectedNode.connectedLinks.length > 0 && (
+                                <div className="col-12 mt-2">
+                                  <small className="text-muted d-block">Connexions actives</small>
+                                  <div className="list-group list-group-flush">
+                                    {selectedNode.connectedLinks.slice(0, 3).map((link, index) => {
+                                      const connectedNode = selectedNode.connectedNodes[index]
+                                      return (
+                                        <div key={index} className="list-group-item px-0 py-1">
+                                          <div className="d-flex align-items-center">
+                                            <CIcon 
+                                              icon={
+                                                connectedNode?.deviceType === "router" ? cilRouter :
+                                                connectedNode?.deviceType === "switch" ? cilStorage :
+                                                connectedNode?.deviceType === "server" ? cilDevices :
+                                                connectedNode?.deviceType === "ap" ? cilSignalCellular4 :
+                                                connectedNode?.deviceType === "laptop" ? cilMonitor :
+                                                connectedNode?.deviceType === "desktop" ? cilScreenDesktop :
+                                                connectedNode?.type === "vlan" ? cilSignalCellular4 :
+                                                cilDevices
+                                              }
+                                              className="me-2"
+                                              size="sm"
+                                            />
+                                            <span className="text-truncate">
+                                              {connectedNode?.type === "vlan" 
+                                                ? `VLAN ${connectedNode.vlan}`
+                                                : connectedNode?.hostname || "Inconnu"}
+                                            </span>
+                                            <CBadge color="info" className="ms-auto">
+                                              {link.bandwidth}
+                                            </CBadge>
+                                          </div>
+                                        </div>
+                                      )
+                                    })}
+                                    {selectedNode.connectedLinks.length > 3 && (
+                                      <div className="text-center text-muted small mt-1">
+                                        +{selectedNode.connectedLinks.length - 3} autres connexions
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </CTabPane>
+
+                          <CTabPane visible={activeTab === 'system'}>
+                            <div className="row g-2">
+                              <div className="col-12">
+                                <small className="text-muted d-block">Système d'exploitation</small>
+                                <span>{selectedNode.os}</span>
+                              </div>
+                              <div className="col-12">
+                                <small className="text-muted d-block">Dernière vue</small>
+                                <span>{new Date(selectedNode.lastSeen).toLocaleString()}</span>
+                              </div>
+                              <div className="col-12">
+                                <small className="text-muted d-block">Première découverte</small>
+                                <span>{new Date(selectedNode.firstDiscovered).toLocaleString()}</span>
+                              </div>
+                            </div>
+                          </CTabPane>
+
+                          <CTabPane visible={activeTab === 'network'}>
+                            <div className="row g-2">
+                              <div className="col-12">
+                                <small className="text-muted d-block">Adresse MAC</small>
+                                <span>{selectedNode.macAddress}</span>
+                              </div>
+                              <div className="col-12">
+                                <small className="text-muted d-block">Bande passante</small>
+                                <span>{selectedNode.stats.bandwidth}</span>
+                              </div>
+                              {selectedNode.connectedLinks && selectedNode.connectedLinks.length > 0 && (
+                                <div className="col-12">
+                                  <small className="text-muted d-block">Toutes les connexions</small>
+                                  <div className="list-group list-group-flush">
+                                    {selectedNode.connectedLinks.map((link, index) => {
+                                      const connectedNode = selectedNode.connectedNodes[index]
+                                      return (
+                                        <div key={index} className="list-group-item px-0 py-1">
+                                          <div className="d-flex align-items-center">
+                                            <CIcon 
+                                              icon={
+                                                connectedNode?.deviceType === "router" ? cilRouter :
+                                                connectedNode?.deviceType === "switch" ? cilStorage :
+                                                connectedNode?.deviceType === "server" ? cilDevices :
+                                                connectedNode?.deviceType === "ap" ? cilSignalCellular4 :
+                                                connectedNode?.deviceType === "laptop" ? cilMonitor :
+                                                connectedNode?.deviceType === "desktop" ? cilScreenDesktop :
+                                                connectedNode?.type === "vlan" ? cilSignalCellular4 :
+                                                cilDevices
+                                              }
+                                              className="me-2"
+                                              size="sm"
+                                            />
+                                            <div className="flex-grow-1">
+                                              <div className="d-flex align-items-center">
+                                                <span className="text-truncate">
+                                                  {connectedNode?.type === "vlan" 
+                                                    ? `VLAN ${connectedNode.vlan}`
+                                                    : connectedNode?.hostname || "Inconnu"}
+                                                </span>
+                                                <CBadge color="info" className="ms-2">
+                                                  {link.bandwidth}
+                                                </CBadge>
+                                                {link.type && (
+                                                  <CBadge color="secondary" className="ms-2">
+                                                    {link.type}
+                                                  </CBadge>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </CTabPane>
+                        </CTabContent>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Legende */}
-          <div className="mt-3">
-            <h6>Legende :</h6>
-            <CRow>
-              <CCol xs="auto" className="me-3">
-                <CIcon icon={cilRouter} className="me-1" /> Router
-              </CCol>
-              <CCol xs="auto" className="me-3">
-                <CIcon icon={cilChartPie} className="me-1" /> Switch
-              </CCol>
-              <CCol xs="auto" className="me-3">
-                <CIcon icon={cilDevices} className="me-1" /> Serveur
-              </CCol>
-              <CCol xs="auto" className="me-3">
-                <span className="badge bg-success me-1">●</span> Actif
-              </CCol>
-              <CCol xs="auto" className="me-3">
-                <span className="badge bg-warning me-1">●</span> Avertissement
-              </CCol>
-              <CCol xs="auto">
-                <span className="badge bg-danger me-1">●</span> Inactif
-              </CCol>
-            </CRow>
+          <div className="mt-3 topology-legend">
+            <h6>
+              <CIcon icon={cilInfo} className="me-2" />
+              Légende :
+            </h6>
+            <div className="d-flex flex-wrap">
+              <div className="legend-item">
+                <div className="legend-icon router">
+                  <CIcon icon={cilRouter} />
+                </div>
+                <span>Router</span>
+              </div>
+              <div className="legend-item">
+                <div className="legend-icon switch">
+                  <CIcon icon={cilStorage} />
+                </div>
+                <span>Switch</span>
+              </div>
+              <div className="legend-item">
+                <div className="legend-icon server">
+                  <CIcon icon={cilDevices} />
+                </div>
+                <span>Serveur</span>
+              </div>
+              <div className="legend-item">
+                <div className="legend-icon ap">
+                  <CIcon icon={cilSignalCellular4} />
+                </div>
+                <span>Point d'accès</span>
+              </div>
+              <div className="legend-item">
+                <div className="legend-icon laptop">
+                  <CIcon icon={cilMonitor} />
+                </div>
+                <span>Portable</span>
+              </div>
+              <div className="legend-item">
+                <div className="legend-icon desktop">
+                  <CIcon icon={cilScreenDesktop} />
+                </div>
+                <span>Ordinateur fixe</span>
+              </div>
+              <div className="legend-item">
+                <div className="legend-icon mobile">
+                  <CIcon icon={cilDevices} />
+                </div>
+                <span>Mobile</span>
+              </div>
+            </div>
+            <div className="d-flex flex-wrap mt-2">
+              <div className="legend-status">
+                <div className="legend-status-dot active"></div>
+                <span>Actif</span>
+              </div>
+              <div className="legend-status">
+                <div className="legend-status-dot warning"></div>
+                <span>Avertissement</span>
+              </div>
+              <div className="legend-status">
+                <div className="legend-status-dot danger"></div>
+                <span>Danger</span>
+              </div>
+              <div className="legend-status">
+                <div className="legend-status-dot inactive"></div>
+                <span>Inactif</span>
+              </div>
+            </div>
           </div>
         </CCardBody>
       </CCard>
@@ -224,4 +992,4 @@ const Topology = () => {
   )
 }
 
-export default Topology 
+export default Topology
