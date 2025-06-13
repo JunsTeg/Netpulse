@@ -37,6 +37,7 @@ import {
   cilMonitor,
   cilScreenDesktop,
   cilInfo,
+  cilX,
 } from "@coreui/icons"
 import "@coreui/coreui/dist/css/coreui.min.css"
 import "./Topology.css"
@@ -53,6 +54,148 @@ const Topology = () => {
   const [filteredLinks, setFilteredLinks] = useState([])
   const [showDetails, setShowDetails] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [suggestions, setSuggestions] = useState([])
+  const searchInputRef = useRef(null)
+  const suggestionsRef = useRef(null)
+  const zoomBehaviorRef = useRef(null) // Reference pour le comportement de zoom
+
+  // Fonction pour generer les suggestions
+  const generateSuggestions = (term) => {
+    if (!term) {
+      setSuggestions([])
+      return
+    }
+
+    const searchLower = term.toLowerCase()
+    const uniqueSuggestions = new Set()
+
+    // Rechercher dans les noms d'appareils
+    networkData.nodes.forEach(node => {
+      if (node.hostname.toLowerCase().includes(searchLower)) {
+        uniqueSuggestions.add({
+          type: 'hostname',
+          value: node.hostname,
+          icon: getDeviceIcon(node.deviceType),
+          deviceType: node.deviceType
+        })
+      }
+    })
+
+    // Rechercher dans les types d'appareils
+    const deviceTypes = [...new Set(networkData.nodes.map(node => node.deviceType))]
+    deviceTypes.forEach(type => {
+      if (type.toLowerCase().includes(searchLower)) {
+        uniqueSuggestions.add({
+          type: 'deviceType',
+          value: type,
+          icon: getDeviceIcon(type),
+          deviceType: type
+        })
+      }
+    })
+
+    // Rechercher dans les VLANs
+    const vlans = [...new Set(networkData.nodes.map(node => node.stats.vlan))]
+    vlans.forEach(vlan => {
+      if (vlan.toLowerCase().includes(searchLower)) {
+        uniqueSuggestions.add({
+          type: 'vlan',
+          value: vlan,
+          icon: { path: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" }
+        })
+      }
+    })
+
+    setSuggestions(Array.from(uniqueSuggestions))
+  }
+
+  // Gestionnaire de changement de recherche
+  const handleSearchChange = (e) => {
+    const value = e.target.value
+    setSearchTerm(value)
+    generateSuggestions(value)
+    setShowSuggestions(true)
+  }
+
+  // Gestionnaire de selection de suggestion
+  const handleSuggestionClick = (suggestion) => {
+    setSearchTerm(suggestion.value)
+    setShowSuggestions(false)
+    filterNetworkData(selectedView, suggestion.value)
+  }
+
+  // Fermer les suggestions quand on clique en dehors
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchInputRef.current && !searchInputRef.current.contains(event.target) &&
+          suggestionsRef.current && !suggestionsRef.current.contains(event.target)) {
+        setShowSuggestions(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
+
+  // Fonction pour reinitialiser la recherche
+  const resetSearch = () => {
+    setSearchTerm("")
+    setSuggestions([])
+    setShowSuggestions(false)
+    filterNetworkData(selectedView, "")
+  }
+
+  // Fonction pour rafraichir le graphe
+  const refreshGraph = () => {
+    setLoading(true)
+    // Reinitialiser la simulation
+    if (simulation) {
+      simulation.stop()
+    }
+    // Reinitialiser le zoom
+    if (zoomBehaviorRef.current) {
+      d3.select(svgRef.current)
+        .transition()
+        .duration(750)
+        .call(zoomBehaviorRef.current.transform, d3.zoomIdentity)
+    }
+    // Recharger les donnees
+    setTimeout(() => {
+      filterNetworkData(selectedView)
+      setLoading(false)
+    }, 500)
+  }
+
+  // Fonction pour zoomer
+  const handleZoom = (factor) => {
+    if (zoomBehaviorRef.current && svgRef.current) {
+      const svg = d3.select(svgRef.current)
+      const currentTransform = d3.zoomTransform(svg.node())
+      
+      // Calculer le nouveau niveau de zoom
+      const newScale = Math.max(0.1, Math.min(4, currentTransform.k * factor))
+      
+      // Calculer le centre du SVG
+      const width = svgRef.current.clientWidth
+      const height = svgRef.current.clientHeight
+      const centerX = width / 2
+      const centerY = height / 2
+      
+      // Appliquer la nouvelle transformation
+      svg.transition()
+        .duration(250)
+        .call(
+          zoomBehaviorRef.current.transform,
+          d3.zoomIdentity
+            .translate(centerX, centerY)
+            .scale(newScale)
+            .translate(-centerX, -centerY)
+        )
+    }
+  }
 
   // Simuler le chargement des donnees
   useEffect(() => {
@@ -216,7 +359,7 @@ const Topology = () => {
   }
 
   // Fonction pour filtrer les nœuds et liens selon la vue
-  const filterNetworkData = (view) => {
+  const filterNetworkData = (view, searchValue = searchTerm) => {
     let nodes = [...networkData.nodes]
     let links = [...networkData.links]
 
@@ -278,15 +421,15 @@ const Topology = () => {
         break
     }
 
-    // Appliquer le filtre de recherche si nécessaire
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase()
+    // Appliquer le filtre de recherche si necessaire
+    if (searchValue) {
+      const searchLower = searchValue.toLowerCase()
       nodes = nodes.filter(node => 
         node.hostname.toLowerCase().includes(searchLower) ||
         node.deviceType.toLowerCase().includes(searchLower) ||
         (node.stats && node.stats.vlan.toLowerCase().includes(searchLower))
       )
-      // Filtrer les liens en conséquence
+      // Filtrer les liens en consequence
       links = links.filter(link => {
         const sourceNode = nodes.find(n => n.id === link.source || n.id === `vlan-${link.source}`)
         const targetNode = nodes.find(n => n.id === link.target || n.id === `vlan-${link.target}`)
@@ -382,6 +525,9 @@ const Topology = () => {
         g.attr("transform", event.transform)
         setZoom(event.transform.k)
       })
+
+    // Sauvegarder la reference du comportement de zoom
+    zoomBehaviorRef.current = zoomBehavior
 
     d3.select(svgRef.current).call(zoomBehavior)
 
@@ -511,7 +657,7 @@ const Topology = () => {
             <CCol xs="auto" className="ms-auto">
               <CButtonGroup>
                 <CTooltip content="Zoom avant">
-                  <CButton color="primary" variant="outline" onClick={() => setZoom((prev) => Math.min(prev + 0.1, 4))}>
+                  <CButton color="primary" variant="outline" onClick={() => handleZoom(1.2)}>
                     <CIcon icon={cilZoomIn} />
                   </CButton>
                 </CTooltip>
@@ -519,13 +665,13 @@ const Topology = () => {
                   <CButton
                     color="primary"
                     variant="outline"
-                    onClick={() => setZoom((prev) => Math.max(prev - 0.1, 0.1))}
+                    onClick={() => handleZoom(0.8)}
                   >
                     <CIcon icon={cilZoomOut} />
                   </CButton>
                 </CTooltip>
                 <CTooltip content="Actualiser">
-                  <CButton color="primary" variant="outline" onClick={() => window.location.reload()}>
+                  <CButton color="primary" variant="outline" onClick={refreshGraph}>
                     <CIcon icon={cilReload} />
                   </CButton>
                 </CTooltip>
@@ -555,18 +701,88 @@ const Topology = () => {
                 <option value="vlan">Vue par VLAN</option>
               </CFormSelect>
             </CCol>
-            <CCol md={8}>
+            <CCol md={8} className="position-relative" ref={searchInputRef}>
               <CInputGroup>
                 <CInputGroupText>
                   <CIcon icon={cilFilter} />
                 </CInputGroupText>
                 <CFormInput
-                  placeholder="Rechercher un appareil..."
+                  placeholder="Rechercher un appareil, type ou VLAN..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={handleSearchChange}
+                  onFocus={() => setShowSuggestions(true)}
                   className="topology-search"
                 />
+                {searchTerm && (
+                  <CInputGroupText 
+                    style={{ cursor: 'pointer' }}
+                    onClick={resetSearch}
+                    className="bg-transparent border-start-0"
+                  >
+                    <CIcon 
+                      icon={cilX} 
+                      style={{ 
+                        color: '#666',
+                        transition: 'color 0.2s',
+                        ':hover': {
+                          color: '#333'
+                        }
+                      }}
+                    />
+                  </CInputGroupText>
+                )}
               </CInputGroup>
+              {showSuggestions && suggestions.length > 0 && (
+                <div 
+                  ref={suggestionsRef}
+                  className="suggestions-container"
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    zIndex: 1000,
+                    backgroundColor: 'white',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                    maxHeight: '300px',
+                    overflowY: 'auto'
+                  }}
+                >
+                  {suggestions.map((suggestion, index) => (
+                    <div
+                      key={index}
+                      className="suggestion-item"
+                      onClick={() => handleSuggestionClick(suggestion)}
+                      style={{
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        borderBottom: index < suggestions.length - 1 ? '1px solid #eee' : 'none'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+                    >
+                      <div style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d={suggestion.icon.path} fill="#666"/>
+                        </svg>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 'bold' }}>{suggestion.value}</div>
+                        <small style={{ color: '#666' }}>
+                          {suggestion.type === 'hostname' ? `Appareil (${suggestion.deviceType})` :
+                           suggestion.type === 'deviceType' ? 'Type d\'appareil' :
+                           'VLAN'}
+                        </small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CCol>
           </CRow>
 
