@@ -7,10 +7,19 @@ class UserController {
   static async getAllUsers(req, res) {
     try {
       const users = await User.findAll();
-      res.json(users);
+      // Transformer les donnees pour exclure le mot de passe
+      const sanitizedUsers = users.map(user => ({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        isActive: user.isActive,
+        createdAt: user.createdAt,
+        lastLoginAt: user.lastLoginAt
+      }));
+      res.json(sanitizedUsers);
     } catch (error) {
       console.error('Erreur lors de la recuperation des utilisateurs:', error);
-      res.status(500).json({ message: 'Erreur serveur' });
+      res.status(500).json({ message: 'Erreur lors de la recuperation des utilisateurs' });
     }
   }
 
@@ -21,10 +30,19 @@ class UserController {
       if (!user) {
         return res.status(404).json({ message: 'Utilisateur non trouve' });
       }
-      res.json(user);
+      // Transformer les donnees pour exclure le mot de passe
+      const sanitizedUser = {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        isActive: user.isActive,
+        createdAt: user.createdAt,
+        lastLoginAt: user.lastLoginAt
+      };
+      res.json(sanitizedUser);
     } catch (error) {
       console.error('Erreur lors de la recuperation de l\'utilisateur:', error);
-      res.status(500).json({ message: 'Erreur serveur' });
+      res.status(500).json({ message: 'Erreur lors de la recuperation de l\'utilisateur' });
     }
   }
 

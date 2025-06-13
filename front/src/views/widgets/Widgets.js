@@ -16,17 +16,17 @@ import { getStyle } from '@coreui/utils'
 import CIcon from '@coreui/icons-react'
 import {
   cilArrowRight,
-  cilBasket,
+  cilCart,
   cilBell,
   cilChartPie,
   cilMoon,
   cilLaptop,
   cilPeople,
   cilSettings,
-  cilSpeech,
+  cilCommentSquare,
   cilSpeedometer,
   cilUser,
-  cilUserFollow,
+  cilUserPlus,
 } from '@coreui/icons'
 import { CChartBar, CChartLine } from '@coreui/react-chartjs'
 import { DocsExample } from 'src/components'
@@ -749,13 +749,13 @@ const Widgets = () => {
               progress={{ color: 'info', value: 75 }}
             />
             <CWidgetStatsC
-              icon={<CIcon icon={cilUserFollow} height={36} />}
+              icon={<CIcon icon={cilUserPlus} height={36} />}
               value="385"
               title="New Clients"
               progress={{ color: 'success', value: 75 }}
             />
             <CWidgetStatsC
-              icon={<CIcon icon={cilBasket} height={36} />}
+              icon={<CIcon icon={cilCart} height={36} />}
               value="1238"
               title="Products sold"
               progress={{ color: 'warning', value: 75 }}
@@ -786,7 +786,7 @@ const Widgets = () => {
             </CCol>
             <CCol xs={6} lg={4} xxl={2}>
               <CWidgetStatsC
-                icon={<CIcon icon={cilUserFollow} height={36} />}
+                icon={<CIcon icon={cilUserPlus} height={36} />}
                 value="385"
                 title="New Clients"
                 progress={{ color: 'success', value: 75 }}
@@ -794,7 +794,7 @@ const Widgets = () => {
             </CCol>
             <CCol xs={6} lg={4} xxl={2}>
               <CWidgetStatsC
-                icon={<CIcon icon={cilBasket} height={36} />}
+                icon={<CIcon icon={cilCart} height={36} />}
                 value="1238"
                 title="Products sold"
                 progress={{ color: 'warning', value: 75 }}
@@ -818,7 +818,7 @@ const Widgets = () => {
             </CCol>
             <CCol xs={6} lg={4} xxl={2}>
               <CWidgetStatsC
-                icon={<CIcon icon={cilSpeech} height={36} />}
+                icon={<CIcon icon={cilCommentSquare} height={36} />}
                 value="972"
                 title="Comments"
                 progress={{ color: 'info', value: 75 }}
@@ -841,7 +841,7 @@ const Widgets = () => {
             <CCol xs={6} lg={4} xxl={2}>
               <CWidgetStatsC
                 color="success"
-                icon={<CIcon icon={cilUserFollow} height={36} />}
+                icon={<CIcon icon={cilUserPlus} height={36} />}
                 value="385"
                 title="New Clients"
                 inverse
@@ -851,7 +851,7 @@ const Widgets = () => {
             <CCol xs={6} lg={4} xxl={2}>
               <CWidgetStatsC
                 color="warning"
-                icon={<CIcon icon={cilBasket} height={36} />}
+                icon={<CIcon icon={cilCart} height={36} />}
                 value="1238"
                 title="Products sold"
                 inverse
@@ -881,7 +881,7 @@ const Widgets = () => {
             <CCol xs={6} lg={4} xxl={2}>
               <CWidgetStatsC
                 color="info"
-                icon={<CIcon icon={cilSpeech} height={36} />}
+                icon={<CIcon icon={cilCommentSquare} height={36} />}
                 value="972"
                 title="Comments"
                 inverse

@@ -23,7 +23,7 @@ import {
   CSpinner,
   CAlert,
 } from '@coreui/react'
-import { cilPencil, cilTrash, cilPlus } from '@coreui/icons'
+import { cilPencil, cilTrash, cilPlus, cilBan, cilCheck } from '@coreui/icons'
 import CIcon from '@coreui/icons-react'
 import userService from '../../services/user.service'
 import { success, error } from '../../services/notification.service'
@@ -38,6 +38,7 @@ const Users = () => {
     username: '',
     email: '',
     password: '',
+    isActive: true,
   })
   const [alertMessage, setAlertMessage] = useState({ type: '', content: '' })
 
@@ -49,6 +50,7 @@ const Users = () => {
     try {
       setLoading(true)
       const data = await userService.getAllUsers()
+      console.log('Structure des donnees utilisateur:', data[0]) // Log pour voir la structure
       setUsers(data)
     } catch (err) {
       setAlertMessage({
@@ -74,6 +76,7 @@ const Users = () => {
       username: '',
       email: '',
       password: '',
+      isActive: true,
     })
     setModalVisible(true)
   }
@@ -85,6 +88,7 @@ const Users = () => {
       username: user.username,
       email: user.email,
       password: '',
+      isActive: user.isActive,
     })
     setModalVisible(true)
   }
@@ -95,7 +99,8 @@ const Users = () => {
 
     try {
       if (modalMode === 'create') {
-        await userService.createUser(formData)
+        const { isActive, ...userData } = formData
+        await userService.createUser(userData)
         success('Utilisateur cree', 'L\'utilisateur a ete cree avec succes')
       } else {
         await userService.updateUser(selectedUser.id, formData)
@@ -120,6 +125,32 @@ const Users = () => {
       } catch (err) {
         error('Erreur', err.message || 'Erreur lors de la suppression')
       }
+    }
+  }
+
+  const handleToggleStatus = async (user) => {
+    try {
+      // On envoie un objet avec tous les champs necessaires
+      const updateData = {
+        username: user.username,
+        email: user.email,
+        isActive: user.isActive === 1 ? 0 : 1
+      }
+      console.log('Envoi de la mise a jour:', updateData)
+      const response = await userService.updateUser(user.id, updateData)
+      console.log('Reponse de la mise a jour:', response)
+      
+      // Mise a jour immediate de l'etat local
+      setUsers(users.map(u => 
+        u.id === user.id ? { ...u, isActive: user.isActive === 1 ? 0 : 1 } : u
+      ))
+      success(
+        'Statut modifie',
+        `L'utilisateur a ete ${user.isActive === 1 ? 'desactive' : 'active'} avec succes`
+      )
+    } catch (err) {
+      console.error('Erreur lors de la mise a jour du statut:', err)
+      error('Erreur', err.message || 'Erreur lors de la modification du statut')
     }
   }
 
@@ -152,9 +183,10 @@ const Users = () => {
             <CTable hover>
               <CTableHead>
                 <CTableRow>
-                  <CTableHeaderCell>ID</CTableHeaderCell>
                   <CTableHeaderCell>Nom d'utilisateur</CTableHeaderCell>
                   <CTableHeaderCell>Email</CTableHeaderCell>
+                  <CTableHeaderCell>Statut</CTableHeaderCell>
+                  <CTableHeaderCell>Derniere connexion</CTableHeaderCell>
                   <CTableHeaderCell>Date de creation</CTableHeaderCell>
                   <CTableHeaderCell>Actions</CTableHeaderCell>
                 </CTableRow>
@@ -162,13 +194,30 @@ const Users = () => {
               <CTableBody>
                 {users.map((user) => (
                   <CTableRow key={user.id}>
-                    <CTableDataCell>{user.id}</CTableDataCell>
                     <CTableDataCell>{user.username}</CTableDataCell>
                     <CTableDataCell>{user.email}</CTableDataCell>
+                    <CTableDataCell>
+                      <span className={`badge bg-${user.isActive === 1 ? 'success' : 'danger'}`}>
+                        {user.isActive === 1 ? 'Actif' : 'Inactif'}
+                      </span>
+                    </CTableDataCell>
+                    <CTableDataCell>
+                      {(() => {
+                        return user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Jamais';
+                      })()}
+                    </CTableDataCell>
                     <CTableDataCell>
                       {new Date(user.createdAt).toLocaleDateString()}
                     </CTableDataCell>
                     <CTableDataCell>
+                      <CButton
+                        color={user.isActive === 1 ? 'warning' : 'success'}
+                        variant="ghost"
+                        className="me-2"
+                        onClick={() => handleToggleStatus(user)}
+                      >
+                        <CIcon icon={user.isActive === 1 ? cilBan : cilCheck} />
+                      </CButton>
                       <CButton
                         color="primary"
                         variant="ghost"
@@ -232,6 +281,22 @@ const Users = () => {
                 onChange={handleInputChange}
                 required={modalMode === 'create'}
               />
+            </div>
+            <div className="mb-3">
+              <CFormLabel>Statut</CFormLabel>
+              <div className="form-check">
+                <input
+                  type="checkbox"
+                  className="form-check-input"
+                  id="isActive"
+                  name="isActive"
+                  checked={formData.isActive}
+                  onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                />
+                <label className="form-check-label" htmlFor="isActive">
+                  Compte actif
+                </label>
+              </div>
             </div>
           </CForm>
         </CModalBody>

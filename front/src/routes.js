@@ -58,6 +58,22 @@ const Widgets = React.lazy(() => import('./views/widgets/Widgets'))
 //Test
 const TestConnection = React.lazy(() => import('./views/test-connection/TestConnection'))
 
+// Import des nouveaux composants (a creer)
+const Devices = React.lazy(() => import('./views/devices/Devices'))
+const Topology = React.lazy(() => import('./views/topology/Topology'))
+const NetworkStats = React.lazy(() => import('./views/network-stats/NetworkStats'))
+const Anomalies = React.lazy(() => import('./views/anomalies/Anomalies'))
+const Logs = React.lazy(() => import('./views/logs/Logs'))
+const History = React.lazy(() => import('./views/history/History'))
+const Settings = React.lazy(() => import('./views/settings/Settings'))
+const Thresholds = React.lazy(() => import('./views/thresholds/Thresholds'))
+const Notifications = React.lazy(() => import('./views/notifications/Notifications'))
+const Feedback = React.lazy(() => import('./views/feedback/Feedback'))
+const Reports = React.lazy(() => import('./views/reports/Reports'))
+
+// Routes temporaires pour les composants non encore crees
+const Placeholder = () => <div>Page en construction</div>
+
 const routes = [
   { path: '/', exact: true, name: 'Home' },
   { path: '/dashboard', name: 'Dashboard', element: Dashboard },
@@ -117,6 +133,28 @@ const routes = [
   { path: '/notifications/toasts', name: 'Toasts', element: Toasts },
   { path: '/widgets', name: 'Widgets', element: Widgets },
   { path: '/test-connection', name: 'Test API', element: TestConnection },
+  
+  // Routes Reseau
+  { path: '/devices', name: 'Appareils', element: Devices || Placeholder },
+  { path: '/topology', name: 'Topologie', element: Topology || Placeholder },
+  { path: '/network-stats', name: 'Statistiques', element: NetworkStats || Placeholder },
+  
+  // Routes Surveillance
+  { path: '/anomalies', name: 'Anomalies', element: Anomalies || Placeholder },
+  { path: '/alerts', name: 'Alertes', element: Alerts || Placeholder },
+  
+  // Routes Logs
+  { path: '/logs', name: 'Logs reseau', element: Logs || Placeholder },
+  { path: '/history', name: 'Historique', element: History || Placeholder },
+  
+  // Routes Administration
+  { path: '/settings', name: 'Parametres', element: Settings || Placeholder },
+  { path: '/thresholds', name: 'Seuils dalerte', element: Thresholds || Placeholder },
+  
+  // Routes Audit & Feedback
+  { path: '/notifications', name: 'Notifications', element: Notifications || Placeholder },
+  { path: '/feedback', name: 'Feedback alertes', element: Feedback || Placeholder },
+  { path: '/reports', name: 'Rapports', element: Reports || Placeholder },
 ]
 
 export default routes

@@ -30,7 +30,7 @@ class User {
   static async findByUsername(username) {
     try {
       const [rows] = await db.query(
-        'SELECT * FROM utilisateur WHERE username = ?',
+        'SELECT id, username, email, password, isActive, createdAt, lastLoginAt FROM utilisateur WHERE username = ?',
         [username]
       );
       return rows[0];

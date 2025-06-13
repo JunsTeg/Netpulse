@@ -1,7 +1,13 @@
 // Configuration de l'API
-export const API_CONFIG = {
+const API_CONFIG = {
   // URL de base de l'API
   BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:3001',
+  
+  // Configuration des headers par defaut
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+  },
   
   // Prefixes des differentes sections
   PREFIXES: {
@@ -54,6 +60,12 @@ export const API_CONFIG = {
 };
 
 // Fonction utilitaire pour construire les URLs
-export const buildApiUrl = (path) => {
+const buildApiUrl = (path) => {
   return `${API_CONFIG.BASE_URL}${path}`;
-}; 
+};
+
+// Export par defaut de la configuration
+export default API_CONFIG;
+
+// Export nomme pour la compatibilite
+export { API_CONFIG, buildApiUrl }; 
