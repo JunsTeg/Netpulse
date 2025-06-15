@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react'
+import axios from 'axios'
+import authService from '../../services/auth.service'
 import {
   CCard,
   CCardBody,
@@ -23,6 +25,7 @@ import {
   CForm,
   CFormLabel,
   CFormSelect,
+  CFormCheck,
   CBadge,
   CTooltip,
   CSpinner,
@@ -40,7 +43,10 @@ import {
   cilCheckCircle,
   cilXCircle,
 } from '@coreui/icons'
-import { v4 as uuidv4 } from 'uuid'
+import { API_CONFIG } from '../../config/api.config'
+
+// Configuration de l'URL de base de l'API
+axios.defaults.baseURL = API_CONFIG.BASE_URL
 
 const Devices = () => {
   // Etats
@@ -49,6 +55,7 @@ const Devices = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [selectedDevice, setSelectedDevice] = useState(null)
+  const [devices, setDevices] = useState([])
   const [formData, setFormData] = useState({
     hostname: '',
     ipAddress: '',
@@ -57,49 +64,25 @@ const Devices = () => {
     deviceType: '',
   })
 
-  // Donnees de test (a remplacer par l'API)
-  const [devices, setDevices] = useState([
-    {
-      id: uuidv4(),
-      hostname: 'Router-Core-01',
-      deviceType: 'Router',
-      ipAddress: '192.168.1.1',
-      macAddress: '00:1A:2B:3C:4D:5E',
-      os: 'Cisco IOS',
-      stats: { cpu: 45, memory: 60, uptime: '15d 6h' },
-      lastSeen: '2024-03-20 14:30:00',
-      firstDiscovered: '2024-01-01 00:00:00',
-    },
-    {
-      id: uuidv4(),
-      hostname: 'Switch-Acces-01',
-      deviceType: 'Switch',
-      ipAddress: '192.168.1.2',
-      macAddress: '00:1A:2B:3C:4D:5F',
-      os: 'Cisco IOS',
-      stats: { cpu: 30, memory: 45, uptime: '10d 3h' },
-      lastSeen: '2024-03-20 14:25:00',
-      firstDiscovered: '2024-01-01 00:00:00',
-    },
-    {
-      id: uuidv4(),
-      hostname: 'AP-Wifi-01',
-      deviceType: 'Access Point',
-      ipAddress: '192.168.1.3',
-      macAddress: '00:1A:2B:3C:4D:60',
-      os: 'Linux',
-      stats: { cpu: 25, memory: 40, uptime: '5d 12h' },
-      lastSeen: '2024-03-20 13:45:00',
-      firstDiscovered: '2024-01-01 00:00:00',
-    },
-  ])
+  // Initialisation du token d'authentification
+  useEffect(() => {
+    const token = authService.getToken()
+    console.log('Token d\'authentification:', token ? 'Présent' : 'Manquant')
+    if (token) {
+      authService.setAuthHeader(token)
+      console.log('Headers axios configurés:', axios.defaults.headers.common)
+    } else {
+      console.log('Redirection vers la page de connexion...')
+      window.location.href = '/login'
+    }
+  }, [])
 
-  // Fonction pour filtrer les appareils
-  const filteredDevices = devices.filter((device) =>
-    Object.values(device).some((value) =>
+  // Fonction pour filtrer les appareils avec vérification de sécurité
+  const filteredDevices = Array.isArray(devices) ? devices.filter((device) =>
+    device && Object.values(device).some((value) =>
       value?.toString().toLowerCase().includes(searchTerm.toLowerCase()),
     ),
-  )
+  ) : []
 
   // Fonction pour obtenir le statut de l'appareil
   const getDeviceStatus = (lastSeen) => {
@@ -112,43 +95,126 @@ const Devices = () => {
     return { status: 'inactif', icon: cilXCircle, color: 'danger' }
   }
 
+  // Fonction pour charger les appareils depuis l'API
+  const fetchDevices = async () => {
+    try {
+      setLoading(true)
+      const token = authService.getToken()
+      
+      // Verification du token
+      if (!token) {
+        console.log('Token manquant, redirection vers la page de connexion...')
+        window.location.href = '/login'
+        return
+      }
+
+      // Configuration du header d'authentification
+      authService.setAuthHeader(token)
+
+      console.log('Environnement:', API_CONFIG.ENV)
+      console.log('URL de l\'API:', API_CONFIG.BASE_URL)
+      console.log('Tentative de recuperation des appareils avec le token:', token ? 'Present' : 'Manquant')
+
+      const response = await axios.get(API_CONFIG.ROUTES.NETWORK.DEVICES)
+      console.log('Reponse du serveur:', response.data)
+      
+      setDevices(response.data)
+      setError(null)
+    } catch (err) {
+      console.error('Erreur detaillee:', err)
+      if (err.response?.status === 401) {
+        authService.logout()
+        window.location.href = '/login'
+      } else {
+        setError('Erreur lors du chargement des appareils: ' + (err.response?.data?.message || err.message))
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Charger les appareils au montage et verifier l'authentification
+  useEffect(() => {
+    const token = authService.getToken()
+    if (!token) {
+      console.log('Pas de token trouve, redirection vers la page de connexion')
+      window.location.href = '/login'
+      return
+    }
+    
+    // Configuration du header d'authentification
+    authService.setAuthHeader(token)
+    console.log('Token configure, headers:', axios.defaults.headers.common)
+    
+    // Chargement uniquement de la liste des appareils
+    fetchDevices()
+  }, [])
+
   // Gestion du formulaire
   const handleInputChange = (e) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
   }
 
-  const handleSubmit = (e) => {
+  // Fonction pour ajouter/modifier un appareil
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    // TODO: Implémenter l'appel API
-    const newDevice = {
-      id: selectedDevice?.id || uuidv4(),
-      ...formData,
-      stats: selectedDevice?.stats || {},
-      lastSeen: new Date().toISOString(),
-      firstDiscovered: selectedDevice?.firstDiscovered || new Date().toISOString(),
-    }
+    try {
+      setLoading(true)
+      const token = authService.getToken()
+      if (!token) {
+        throw new Error('Non authentifié')
+      }
 
-    if (selectedDevice) {
-      setDevices(prev => prev.map(d => d.id === selectedDevice.id ? newDevice : d))
-    } else {
-      setDevices(prev => [...prev, newDevice])
-    }
+      const headers = {
+        'Authorization': `Bearer ${token}`
+      }
 
-    setVisible(false)
-    setSelectedDevice(null)
-    setFormData({
-      hostname: '',
-      ipAddress: '',
-      macAddress: '',
-      os: '',
-      deviceType: '',
-    })
+      if (selectedDevice) {
+        // Modification
+        await axios.put(`/api/network/devices/${selectedDevice.id}`, formData, { headers })
+      } else {
+        // Ajout
+        await axios.post('/api/network/devices', formData, { headers })
+      }
+      await fetchDevices() // Recharger la liste
+      setVisible(false)
+      setSelectedDevice(null)
+      setFormData({
+        hostname: '',
+        ipAddress: '',
+        macAddress: '',
+        os: '',
+        deviceType: '',
+      })
+    } catch (err) {
+      setError('Erreur lors de l\'enregistrement: ' + (err.response?.data?.message || err.message))
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleDelete = (deviceId) => {
+  // Fonction pour supprimer un appareil
+  const handleDelete = async (deviceId) => {
     if (window.confirm('Êtes-vous sûr de vouloir supprimer cet appareil ?')) {
-      setDevices(prev => prev.filter(d => d.id !== deviceId))
+      try {
+        setLoading(true)
+        const token = authService.getToken()
+        if (!token) {
+          throw new Error('Non authentifié')
+        }
+
+        await axios.delete(`/api/network/devices/${deviceId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
+        await fetchDevices() // Recharger la liste
+      } catch (err) {
+        setError('Erreur lors de la suppression: ' + (err.response?.data?.message || err.message))
+      } finally {
+        setLoading(false)
+      }
     }
   }
 
@@ -164,12 +230,87 @@ const Devices = () => {
     setVisible(true)
   }
 
-  const handleRefresh = () => {
-    setLoading(true)
-    // TODO: Implémenter l'appel API pour rafraîchir les données
-    setTimeout(() => {
+  // Fonction pour rafraîchir uniquement la liste des appareils
+  const handleRefresh = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const token = authService.getToken()
+      if (!token) {
+        window.location.href = '/login'
+        return
+      }
+      
+      console.log('Recuperation de la liste des appareils...')
+      await fetchDevices()
+      console.log('Liste des appareils mise a jour')
+    } catch (err) {
+      console.error('Erreur lors du rafraichissement:', err)
+      setError('Erreur lors du rafraichissement de la liste: ' + err.message)
+    } finally {
       setLoading(false)
-    }, 1000)
+    }
+  }
+
+  // Fonction de scan manuel uniquement via le bouton
+  const handleScan = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const token = authService.getToken()
+      if (!token) {
+        window.location.href = '/login'
+        return
+      }
+
+      // Detection automatique du reseau
+      console.log('[FRONTEND] Demarrage de la detection du reseau...')
+      const networkResponse = await axios.get(API_CONFIG.ROUTES.NETWORK.DETECT)
+      console.log('[FRONTEND] Reponse detection reseau:', networkResponse.data)
+      
+      if (!networkResponse.data || !networkResponse.data.network) {
+        throw new Error('Impossible de detecter le reseau automatiquement')
+      }
+
+      const { startIP, endIP } = networkResponse.data.network
+      console.log('[FRONTEND] Reseau detecte:', { startIP, endIP })
+
+      // Lancement du scan
+      console.log('[FRONTEND] Demarrage du scan reseau avec la plage:', `${startIP}-${endIP}`)
+      const scanResponse = await axios.post(API_CONFIG.ROUTES.NETWORK.SCAN, 
+        { 
+          target: `${startIP}-${endIP}`,
+          quick: true
+        },
+        { 
+          timeout: 300000,
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      )
+      console.log('[FRONTEND] Reponse du scan:', scanResponse.data)
+      
+      // Mise a jour de la liste apres le scan
+      await fetchDevices()
+      console.log('[FRONTEND] Liste des appareils mise a jour avec succes')
+    } catch (err) {
+      console.error('[FRONTEND] Erreur detaillee du scan:', err)
+      if (err.code === 'ECONNABORTED') {
+        setError('Le scan a pris trop de temps. Veuillez reessayer.')
+      } else if (err.response) {
+        console.error('[FRONTEND] Reponse d\'erreur du serveur:', err.response.data)
+        setError(`Erreur lors du scan: ${err.response.data?.message || 'Erreur serveur'}`)
+      } else if (err.request) {
+        console.error('[FRONTEND] Pas de reponse du serveur:', err.request)
+        setError('Le serveur ne repond pas. Verifiez que le backend est en cours d\'execution.')
+      } else {
+        console.error('[FRONTEND] Erreur inconnue:', err.message)
+        setError('Erreur lors du scan: ' + err.message)
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   const resetForm = () => {
@@ -199,9 +340,40 @@ const Devices = () => {
                   setSelectedDevice(null)
                   setVisible(true)
                 }}
+                className="me-2"
               >
                 <CIcon icon={cilPlus} className="me-2" />
                 Ajouter un appareil
+              </CButton>
+              <CButton 
+                color="info" 
+                onClick={handleScan}
+                disabled={loading}
+                className="me-2"
+              >
+                {loading ? (
+                  <>
+                    <CSpinner size="sm" className="me-2" />
+                    Scan en cours (peut prendre jusqu'a 5 minutes)...
+                  </>
+                ) : (
+                  <>
+                    <CIcon icon={cilSearch} className="me-2" />
+                    Scanner le reseau
+                  </>
+                )}
+              </CButton>
+              <CButton 
+                color="secondary" 
+                onClick={handleRefresh}
+                disabled={loading}
+              >
+                {loading ? (
+                  <CSpinner size="sm" className="me-2" />
+                ) : (
+                  <CIcon icon={cilReload} className="me-2" />
+                )}
+                Rafraichir
               </CButton>
             </CCol>
           </CRow>
@@ -222,15 +394,6 @@ const Devices = () => {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
-            <CButton 
-              color="primary" 
-              variant="ghost" 
-              className="px-2"
-              onClick={handleRefresh}
-              disabled={loading}
-            >
-              {loading ? <CSpinner size="sm" /> : <CIcon icon={cilReload} />}
-            </CButton>
           </CInputGroup>
 
           <CTable hover responsive>

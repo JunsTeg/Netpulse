@@ -1,7 +1,10 @@
 // Configuration de l'API
 const API_CONFIG = {
-  // URL de base de l'API
+  // URL de base de l'API avec fallback
   BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:3001',
+  
+  // Environnement actuel
+  ENV: import.meta.env.VITE_APP_ENV || 'development',
   
   // Configuration des headers par defaut
   headers: {
@@ -19,7 +22,7 @@ const API_CONFIG = {
     VERSION: 'v1'
   },
   
-  // Routes completes
+  // Routes completes avec gestion dynamique de l'URL de base
   ROUTES: {
     AUTH: {
       REGISTER: '/api/auth/register',
@@ -37,6 +40,14 @@ const API_CONFIG = {
       ME: '/api/users/me',
       PROFILE: '/api/users/profile',
       SETTINGS: '/api/users/settings',
+    },
+    NETWORK: {
+      SCAN: '/api/network/scan',
+      DEVICES: '/api/network/devices',
+      DEVICE: (id) => `/api/network/devices/${id}`,
+      TOPOLOGY: '/api/network/topology',
+      STATS: (id) => `/api/network/devices/${id}/stats`,
+      DETECT: '/api/network/detect',
     }
   },
   
@@ -59,13 +70,21 @@ const API_CONFIG = {
   }
 };
 
-// Fonction utilitaire pour construire les URLs
+// Fonction utilitaire pour construire les URLs avec gestion des environnements
 const buildApiUrl = (path) => {
-  return `${API_CONFIG.BASE_URL}${path}`;
+  const baseUrl = API_CONFIG.BASE_URL;
+  // Suppression des doubles slashes sauf pour http(s)://
+  const cleanPath = path.replace(/([^:]\/)\/+/g, '$1');
+  return `${baseUrl}${cleanPath}`;
+};
+
+// Fonction pour obtenir l'URL de l'API en fonction de l'environnement
+const getApiUrl = () => {
+  return API_CONFIG.BASE_URL;
 };
 
 // Export par defaut de la configuration
 export default API_CONFIG;
 
 // Export nomme pour la compatibilite
-export { API_CONFIG, buildApiUrl }; 
+export { API_CONFIG, buildApiUrl, getApiUrl }; 

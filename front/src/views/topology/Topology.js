@@ -42,6 +42,7 @@ import {
 } from "@coreui/icons"
 import "@coreui/coreui/dist/css/coreui.min.css"
 import "./Topology.css"
+import axios from 'axios'
 
 // Ajout des styles pour le thème
 const themeStyles = {
@@ -84,10 +85,15 @@ const Topology = () => {
   const searchInputRef = useRef(null)
   const suggestionsRef = useRef(null)
   const zoomBehaviorRef = useRef(null) // Reference pour le comportement de zoom
+  const [networkData, setNetworkData] = useState({
+    nodes: [],
+    links: []
+  })
+  const [error, setError] = useState(null)
 
   // Fonction pour generer les suggestions
   const generateSuggestions = (term) => {
-    if (!term) {
+    if (!term || !networkData.nodes) {
       setSuggestions([])
       return
     }
@@ -173,25 +179,78 @@ const Topology = () => {
     filterNetworkData(selectedView, "")
   }
 
-  // Fonction pour rafraichir le graphe
-  const refreshGraph = () => {
-    setLoading(true)
-    // Reinitialiser la simulation
-    if (simulation) {
-      simulation.stop()
-    }
-    // Reinitialiser le zoom
-    if (zoomBehaviorRef.current) {
-      d3.select(svgRef.current)
-        .transition()
-        .duration(750)
-        .call(zoomBehaviorRef.current.transform, d3.zoomIdentity)
-    }
-    // Recharger les donnees
-    setTimeout(() => {
-      filterNetworkData(selectedView)
+  // Fonction pour charger la topologie depuis l'API
+  const fetchTopology = async () => {
+    try {
+      setLoading(true)
+      const response = await axios.get('/api/network/topology')
+      if (response.data) {
+        // Transformer les données de l'API en format attendu par le composant
+        const transformedData = {
+          nodes: response.data.nodes.map(node => ({
+            id: node.id,
+            hostname: node.hostname,
+            ipAddress: node.ipAddress,
+            macAddress: node.macAddress,
+            os: node.os,
+            deviceType: node.deviceType.toLowerCase(),
+            stats: {
+              status: node.stats.status,
+              vlan: node.stats.vlan,
+              bandwidth: node.stats.bandwidth,
+              cpuUsage: node.stats.cpuUsage,
+              memoryUsage: node.stats.memoryUsage
+            },
+            lastSeen: node.lastSeen,
+            firstDiscovered: node.firstDiscovered
+          })),
+          links: response.data.links.map(link => ({
+            source: link.source,
+            target: link.target,
+            type: link.type,
+            bandwidth: link.bandwidth
+          }))
+        }
+        setNetworkData(transformedData)
+        filterNetworkData(selectedView)
+      }
+      setError(null)
+    } catch (err) {
+      setError('Erreur lors du chargement de la topologie: ' + err.message)
+    } finally {
       setLoading(false)
-    }, 500)
+    }
+  }
+
+  // Charger la topologie au montage
+  useEffect(() => {
+    fetchTopology()
+  }, [])
+
+  // Fonction pour rafraîchir le graphe
+  const refreshGraph = async () => {
+    try {
+      setLoading(true)
+      // Lancer un nouveau scan réseau
+      await axios.post('/api/network/scan', { target: '192.168.1.0/24' })
+      // Recharger la topologie
+      await fetchTopology()
+      // Réinitialiser la simulation
+      if (simulation) {
+        simulation.stop()
+      }
+      // Réinitialiser le zoom
+      if (zoomBehaviorRef.current) {
+        d3.select(svgRef.current)
+          .transition()
+          .duration(750)
+          .call(zoomBehaviorRef.current.transform, d3.zoomIdentity)
+      }
+    } catch (err) {
+      setError('Erreur lors du rafraîchissement: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   // Fonction pour zoomer
@@ -229,121 +288,6 @@ const Topology = () => {
     }, 1000)
     return () => clearTimeout(timer)
   }, [])
-
-  // Donnees de test pour la topologie
-  const networkData = {
-    nodes: [
-      { 
-        id: "1", 
-        hostname: "Router-Core",
-        ipAddress: "192.168.1.1",
-        macAddress: "00:1A:2B:3C:4D:5E",
-        os: "RouterOS",
-        deviceType: "router",
-        stats: {
-          status: "active",
-          vlan: "VLAN1",
-          bandwidth: "1Gbps",
-          cpuUsage: 45,
-          memoryUsage: 60
-        },
-        lastSeen: new Date().toISOString(),
-        firstDiscovered: "2024-01-01T00:00:00Z"
-      },
-      { 
-        id: "2", 
-        hostname: "Switch-Acces-01",
-        ipAddress: "192.168.1.2",
-        macAddress: "00:1A:2B:3C:4D:5F",
-        os: "SwitchOS",
-        deviceType: "switch",
-        stats: {
-          status: "active",
-          vlan: "VLAN1",
-          bandwidth: "1Gbps",
-          cpuUsage: 30,
-          memoryUsage: 45
-        },
-        lastSeen: new Date().toISOString(),
-        firstDiscovered: "2024-01-01T00:00:00Z"
-      },
-      { 
-        id: "3", 
-        hostname: "Switch-Acces-02",
-        ipAddress: "192.168.1.3",
-        macAddress: "00:1A:2B:3C:4D:60",
-        os: "SwitchOS",
-        deviceType: "switch",
-        stats: {
-          status: "warning",
-          vlan: "VLAN2",
-          bandwidth: "1Gbps",
-          cpuUsage: 75,
-          memoryUsage: 80
-        },
-        lastSeen: new Date().toISOString(),
-        firstDiscovered: "2024-01-01T00:00:00Z"
-      },
-      { 
-        id: "4", 
-        hostname: "AP-Wifi-01",
-        ipAddress: "192.168.1.4",
-        macAddress: "00:1A:2B:3C:4D:61",
-        os: "AP-OS",
-        deviceType: "ap",
-        stats: {
-          status: "danger",
-          vlan: "VLAN1",
-          bandwidth: "300Mbps",
-          cpuUsage: 90,
-          memoryUsage: 85
-        },
-        lastSeen: new Date().toISOString(),
-        firstDiscovered: "2024-01-01T00:00:00Z"
-      },
-      { 
-        id: "5", 
-        hostname: "Server-01",
-        ipAddress: "192.168.1.5",
-        macAddress: "00:1A:2B:3C:4D:62",
-        os: "Ubuntu Server 22.04",
-        deviceType: "server",
-        stats: {
-          status: "inactive",
-          vlan: "VLAN3",
-          bandwidth: "1Gbps",
-          cpuUsage: 0,
-          memoryUsage: 0
-        },
-        lastSeen: "2024-01-01T00:00:00Z",
-        firstDiscovered: "2024-01-01T00:00:00Z"
-      },
-      { 
-        id: "6", 
-        hostname: "Smartphone-01",
-        ipAddress: "192.168.1.6",
-        macAddress: "00:1A:2B:3C:4D:63",
-        os: "Android 13",
-        deviceType: "mobile",
-        stats: {
-          status: "active",
-          vlan: "VLAN1",
-          bandwidth: "150Mbps",
-          cpuUsage: 20,
-          memoryUsage: 35
-        },
-        lastSeen: new Date().toISOString(),
-        firstDiscovered: "2024-01-01T00:00:00Z"
-      }
-    ],
-    links: [
-      { source: "1", target: "2", type: "gigabit", bandwidth: "1Gbps" },
-      { source: "1", target: "3", type: "gigabit", bandwidth: "1Gbps" },
-      { source: "2", target: "4", type: "wifi", bandwidth: "300Mbps" },
-      { source: "1", target: "5", type: "gigabit", bandwidth: "1Gbps" },
-      { source: "4", target: "6", type: "wifi", bandwidth: "150Mbps" }
-    ]
-  }
 
   // Fonction pour obtenir la couleur selon le statut
   const getStatusColor = (status) => {
@@ -391,6 +335,12 @@ const Topology = () => {
 
   // Fonction pour filtrer les nœuds et liens selon la vue
   const filterNetworkData = (view, searchValue = searchTerm) => {
+    if (!networkData || !networkData.nodes || !networkData.links) {
+      setFilteredNodes([])
+      setFilteredLinks([])
+      return
+    }
+
     // On commence avec une copie profonde des données
     let nodes = JSON.parse(JSON.stringify(networkData.nodes))
     let links = JSON.parse(JSON.stringify(networkData.links))

@@ -17,8 +17,8 @@ CREATE TABLE appareils (
     deviceType VARCHAR(100),
     stats JSON,
     lastSeen DATETIME,
-    firstDiscovered DATETIME,
-    createAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    firstDiscovered DATETIME DEFAULT CURRENT_TIMESTAMP,
+    createdAt DATETIME GENERATED ALWAYS AS (firstDiscovered) STORED
 );
 
 CREATE TABLE journaux (

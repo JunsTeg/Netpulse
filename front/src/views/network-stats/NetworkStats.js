@@ -1,4 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import axios from 'axios'
+import authService from '../../services/auth.service'
 import {
   CCard,
   CCardBody,
@@ -15,6 +17,8 @@ import {
   CTableHead,
   CTableHeaderCell,
   CTableRow,
+  CAlert,
+  CSpinner,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
@@ -25,36 +29,80 @@ import {
   cilFilter,
   cilSpeedometer,
 } from '@coreui/icons'
+import { API_CONFIG } from '../../config/api.config'
+
+// Configuration de l'URL de base de l'API
+axios.defaults.baseURL = API_CONFIG.BASE_URL
 
 const NetworkStats = () => {
   const [timeRange, setTimeRange] = useState('24h')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [stats, setStats] = useState({
+    bandwidth: {
+      download: 0,
+      upload: 0,
+      latency: 0,
+      packetLoss: 0
+    },
+    traffic: [],
+    devices: []
+  })
 
-  // Donnees de test pour les statistiques
-  const bandwidthStats = {
-    download: 75,
-    upload: 45,
-    latency: 25,
-    packetLoss: 0.5,
+  // Fonction pour charger les statistiques
+  const fetchStats = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const token = authService.getToken()
+      
+      if (!token) {
+        window.location.href = '/login'
+        return
+      }
+
+      // Configuration du header d'authentification
+      authService.setAuthHeader(token)
+
+      // Recuperation des statistiques
+      const response = await axios.get(`${API_CONFIG.ROUTES.NETWORK.STATS}?timeRange=${timeRange}`)
+      console.log('[FRONTEND] Statistiques recuperees:', response.data)
+      
+      setStats(response.data)
+    } catch (err) {
+      console.error('[FRONTEND] Erreur recuperation stats:', err)
+      setError('Erreur lors du chargement des statistiques: ' + (err.response?.data?.message || err.message))
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const trafficData = [
-    { protocol: 'HTTP', port: 80, traffic: '1.2 GB', percentage: 35 },
-    { protocol: 'HTTPS', port: 443, traffic: '2.1 GB', percentage: 60 },
-    { protocol: 'DNS', port: 53, traffic: '0.1 GB', percentage: 5 },
-    { protocol: 'SSH', port: 22, traffic: '0.05 GB', percentage: 2 },
-  ]
-
-  const deviceStats = [
-    { name: 'Router-Core', traffic: '1.5 GB', connections: 156, status: 'active' },
-    { name: 'Switch-Acces-01', traffic: '0.8 GB', connections: 89, status: 'active' },
-    { name: 'AP-Wifi-01', traffic: '0.3 GB', connections: 45, status: 'warning' },
-    { name: 'Server-01', traffic: '0.9 GB', connections: 67, status: 'active' },
-  ]
+  // Charger les statistiques au montage et lors du changement de periode
+  useEffect(() => {
+    fetchStats()
+  }, [timeRange])
 
   const handleRefresh = () => {
-    setLoading(true)
-    setTimeout(() => setLoading(false), 1000)
+    fetchStats()
+  }
+
+  // Fonction pour formater les valeurs de bande passante
+  const formatBandwidth = (value) => {
+    return `${value.toFixed(1)} Mbps`
+  }
+
+  // Fonction pour formater le trafic
+  const formatTraffic = (bytes) => {
+    const units = ['B', 'KB', 'MB', 'GB']
+    let value = bytes
+    let unitIndex = 0
+    
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024
+      unitIndex++
+    }
+    
+    return `${value.toFixed(1)} ${units[unitIndex]}`
   }
 
   return (
@@ -89,13 +137,28 @@ const NetworkStats = () => {
                   30j
                 </CButton>
               </CButtonGroup>
-              <CButton color="primary" variant="outline" onClick={handleRefresh}>
-                <CIcon icon={cilReload} />
+              <CButton 
+                color="primary" 
+                variant="outline" 
+                onClick={handleRefresh}
+                disabled={loading}
+              >
+                {loading ? (
+                  <CSpinner size="sm" />
+                ) : (
+                  <CIcon icon={cilReload} />
+                )}
               </CButton>
             </CCol>
           </CRow>
         </CCardHeader>
         <CCardBody>
+          {error && (
+            <CAlert color="danger" dismissible onClose={() => setError(null)}>
+              {error}
+            </CAlert>
+          )}
+
           {loading ? (
             <div className="text-center py-5">
               <CProgress animated value={100} className="mb-3" />
@@ -110,11 +173,16 @@ const NetworkStats = () => {
                       <div className="d-flex justify-content-between align-items-center">
                         <div>
                           <div className="fs-6 fw-semibold text-body-secondary">Download</div>
-                          <div className="fs-4 fw-semibold">{bandwidthStats.download} Mbps</div>
+                          <div className="fs-4 fw-semibold">{formatBandwidth(stats.bandwidth.download)}</div>
                         </div>
                         <CIcon icon={cilCloudDownload} size="xl" className="text-primary" />
                       </div>
-                      <CProgress className="mt-3" height={4} value={bandwidthStats.download} />
+                      <CProgress 
+                        className="mt-3" 
+                        height={4} 
+                        value={(stats.bandwidth.download / 100) * 100} 
+                        color={stats.bandwidth.download > 80 ? 'danger' : stats.bandwidth.download > 60 ? 'warning' : 'success'}
+                      />
                     </CCardBody>
                   </CCard>
                 </CCol>
@@ -124,11 +192,16 @@ const NetworkStats = () => {
                       <div className="d-flex justify-content-between align-items-center">
                         <div>
                           <div className="fs-6 fw-semibold text-body-secondary">Upload</div>
-                          <div className="fs-4 fw-semibold">{bandwidthStats.upload} Mbps</div>
+                          <div className="fs-4 fw-semibold">{formatBandwidth(stats.bandwidth.upload)}</div>
                         </div>
                         <CIcon icon={cilCloudUpload} size="xl" className="text-success" />
                       </div>
-                      <CProgress className="mt-3" height={4} value={bandwidthStats.upload} />
+                      <CProgress 
+                        className="mt-3" 
+                        height={4} 
+                        value={(stats.bandwidth.upload / 100) * 100}
+                        color={stats.bandwidth.upload > 80 ? 'danger' : stats.bandwidth.upload > 60 ? 'warning' : 'success'}
+                      />
                     </CCardBody>
                   </CCard>
                 </CCol>
@@ -138,11 +211,16 @@ const NetworkStats = () => {
                       <div className="d-flex justify-content-between align-items-center">
                         <div>
                           <div className="fs-6 fw-semibold text-body-secondary">Latence</div>
-                          <div className="fs-4 fw-semibold">{bandwidthStats.latency} ms</div>
+                          <div className="fs-4 fw-semibold">{stats.bandwidth.latency} ms</div>
                         </div>
                         <CIcon icon={cilSpeedometer} size="xl" className="text-warning" />
                       </div>
-                      <CProgress className="mt-3" height={4} value={bandwidthStats.latency} color="warning" />
+                      <CProgress 
+                        className="mt-3" 
+                        height={4} 
+                        value={stats.bandwidth.latency}
+                        color={stats.bandwidth.latency > 100 ? 'danger' : stats.bandwidth.latency > 50 ? 'warning' : 'success'}
+                      />
                     </CCardBody>
                   </CCard>
                 </CCol>
@@ -152,11 +230,16 @@ const NetworkStats = () => {
                       <div className="d-flex justify-content-between align-items-center">
                         <div>
                           <div className="fs-6 fw-semibold text-body-secondary">Perte de paquets</div>
-                          <div className="fs-4 fw-semibold">{bandwidthStats.packetLoss}%</div>
+                          <div className="fs-4 fw-semibold">{stats.bandwidth.packetLoss}%</div>
                         </div>
                         <CIcon icon={cilChart} size="xl" className="text-danger" />
                       </div>
-                      <CProgress className="mt-3" height={4} value={bandwidthStats.packetLoss} color="danger" />
+                      <CProgress 
+                        className="mt-3" 
+                        height={4} 
+                        value={stats.bandwidth.packetLoss}
+                        color={stats.bandwidth.packetLoss > 5 ? 'danger' : stats.bandwidth.packetLoss > 1 ? 'warning' : 'success'}
+                      />
                     </CCardBody>
                   </CCard>
                 </CCol>
@@ -179,15 +262,15 @@ const NetworkStats = () => {
                           </CTableRow>
                         </CTableHead>
                         <CTableBody>
-                          {trafficData.map((item, index) => (
+                          {stats.traffic.map((item, index) => (
                             <CTableRow key={index}>
                               <CTableDataCell>{item.protocol}</CTableDataCell>
                               <CTableDataCell>{item.port}</CTableDataCell>
-                              <CTableDataCell>{item.traffic}</CTableDataCell>
+                              <CTableDataCell>{formatTraffic(item.bytes)}</CTableDataCell>
                               <CTableDataCell>
                                 <CProgress
                                   thin
-                                  color={index === 0 ? 'primary' : index === 1 ? 'success' : 'info'}
+                                  color={item.percentage > 50 ? 'primary' : item.percentage > 25 ? 'success' : 'info'}
                                   value={item.percentage}
                                 />
                               </CTableDataCell>
@@ -214,10 +297,10 @@ const NetworkStats = () => {
                           </CTableRow>
                         </CTableHead>
                         <CTableBody>
-                          {deviceStats.map((device, index) => (
+                          {stats.devices.map((device, index) => (
                             <CTableRow key={index}>
-                              <CTableDataCell>{device.name}</CTableDataCell>
-                              <CTableDataCell>{device.traffic}</CTableDataCell>
+                              <CTableDataCell>{device.hostname}</CTableDataCell>
+                              <CTableDataCell>{formatTraffic(device.traffic)}</CTableDataCell>
                               <CTableDataCell>{device.connections}</CTableDataCell>
                               <CTableDataCell>
                                 <span
