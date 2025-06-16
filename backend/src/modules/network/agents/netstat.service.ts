@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { Device } from '../device.model';
+import { Device, DeviceStatus } from '../device.model';
 import { v4 as uuidv4 } from 'uuid';
 
 const execAsync = promisify(exec);
@@ -68,10 +68,10 @@ export class NetstatAgentService {
     }
   }
 
-  private determineStatus(cpu: number, memory: number, packetLoss: number): 'active' | 'warning' | 'danger' | 'inactive' {
-    if (packetLoss >= 50) return 'inactive';
-    if (cpu > 80 || memory > 80) return 'danger';
-    if (cpu > 60 || memory > 60) return 'warning';
-    return 'active';
+  private determineStatus(cpu: number, memory: number, packetLoss: number): DeviceStatus {
+    if (packetLoss >= 50) return DeviceStatus.INACTIVE;
+    if (cpu > 80 || memory > 80) return DeviceStatus.DANGER;
+    if (cpu > 60 || memory > 60) return DeviceStatus.WARNING;
+    return DeviceStatus.ACTIVE;
   }
 }

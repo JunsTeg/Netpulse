@@ -4,6 +4,7 @@ import { NmapAgentService } from './agents/nmap.service';
 import { TracerouteAgentService } from './agents/traceroute.service';
 import { NetstatAgentService } from './agents/netstat.service';
 import { NetworkController } from './network.controller';
+import { NetworkDetectorService } from './network-detector.service';
 
 @Module({
   controllers: [NetworkController],
@@ -11,8 +12,9 @@ import { NetworkController } from './network.controller';
     NetworkService,
     NmapAgentService,
     TracerouteAgentService,
-    NetstatAgentService
+    NetstatAgentService,
+    NetworkDetectorService
   ],
-  exports: [NetworkService]
+  exports: [NetworkService, NetworkDetectorService]
 })
 export class NetworkModule {} 

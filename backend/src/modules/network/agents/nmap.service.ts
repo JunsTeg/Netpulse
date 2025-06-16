@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { Device, NmapScanConfig, NmapScanResult, DEVICE_PORTS } from '../device.model';
+import { Device, NmapScanConfig, NmapScanResult, DEVICE_PORTS, DeviceType, DeviceStatus } from '../device.model';
 import { v4 as uuidv4 } from 'uuid';
 import * as os from 'os';
 import * as net from 'net';
@@ -10,9 +10,6 @@ import { sequelize } from '../../../database';
 import { QueryTypes } from 'sequelize';
 
 const execAsync = promisify(exec);
-
-type DeviceType = 'router' | 'switch' | 'ap' | 'server' | 'laptop' | 'desktop' | 'mobile' | 'other';
-type DeviceStatus = 'active' | 'warning' | 'danger' | 'inactive';
 
 interface NetworkStats {
   bandwidth: number;
@@ -113,6 +110,12 @@ export class NmapAgentService {
 
   private async logAction(actionId: string, userId: string | undefined, action: string, detail: string): Promise<void> {
     try {
+      // Si pas d'ID utilisateur, on ne log pas l'action
+      if (!userId) {
+        this.logger.debug(`[HISTORIQUE] Pas d'ID utilisateur, action non loggee: ${action}`);
+        return;
+      }
+
       // Enregistrement uniquement des actions utilisateur dans l'historique
       if (action.startsWith('network_scan') || action === 'device_stats_collected') {
         await sequelize.query(
@@ -126,7 +129,7 @@ export class NmapAgentService {
           {
             replacements: {
               id: uuidv4(),
-              userId: userId || 'system',
+              userId, // Utilisation directe de l'ID utilisateur
               action,
               targetId: actionId,
               detail,
@@ -216,8 +219,7 @@ export class NmapAgentService {
             cpu: 0,
             memory: 0,
             uptime: '0',
-            status: 'active' as DeviceStatus,
-            openPorts: [],
+            status: DeviceStatus.ACTIVE,
             services: []
           },
           lastSeen: new Date(),
@@ -256,30 +258,30 @@ export class NmapAgentService {
   }
 
   private detectDeviceType(macAddress: string): DeviceType {
-    if (!macAddress) return 'other';
+    if (!macAddress) return DeviceType.OTHER;
     
     const macPrefix = macAddress.substring(0, 8).toUpperCase();
     
     // Detection basique du type d'appareil basé sur le prefixe MAC
     if (macPrefix.startsWith('00:50:56') || macPrefix.startsWith('00:0C:29')) {
-      return 'server';  // Machines virtuelles
+      return DeviceType.SERVER;  // Machines virtuelles
     } else if (macPrefix.startsWith('B8:27:EB') || macPrefix.startsWith('DC:A6:32')) {
-      return 'server';  // Raspberry Pi
+      return DeviceType.SERVER;  // Raspberry Pi
     } else if (macPrefix.startsWith('00:1A:79')) {
-      return 'router';
+      return DeviceType.ROUTER;
     } else if (macPrefix.startsWith('00:1B:63') || macPrefix.startsWith('00:1C:B3')) {
-      return 'switch';
+      return DeviceType.SWITCH;
     } else if (macPrefix.startsWith('00:1A:2B') || macPrefix.startsWith('00:1C:0E')) {
-      return 'ap';
+      return DeviceType.AP;
     } else if (macPrefix.startsWith('00:1E:8C') || macPrefix.startsWith('00:1F:3F')) {
-      return 'laptop';
+      return DeviceType.LAPTOP;
     } else if (macPrefix.startsWith('00:1D:7D') || macPrefix.startsWith('00:1F:5B')) {
-      return 'desktop';
+      return DeviceType.DESKTOP;
     } else if (macPrefix.startsWith('00:1E:8C') || macPrefix.startsWith('00:1F:3F')) {
-      return 'mobile';
+      return DeviceType.MOBILE;
     }
     
-    return 'other';
+    return DeviceType.OTHER;
   }
 
   private parseNmapOutput(stdout: string): Device[] {
@@ -295,13 +297,12 @@ export class NmapAgentService {
           ipAddress: ipMatch[1],
           macAddress: '',
           os: 'Unknown',
-          deviceType: 'other',
+          deviceType: DeviceType.OTHER,
           stats: {
             cpu: 0,
             memory: 0,
             uptime: '0',
-            status: 'active' as DeviceStatus,
-            openPorts: [],
+            status: DeviceStatus.ACTIVE,
             services: []
           },
           lastSeen: new Date(),
@@ -500,7 +501,6 @@ export class NmapAgentService {
                 os: device.os
               },
               technicalDetails: {
-                ports: device.stats.openPorts,
                 services: device.stats.services
               }
             }),
