@@ -1,111 +1,92 @@
-import { WebSocketGateway, WebSocketServer, SubscribeMessage } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
-import { NetworkService } from './network.service';
-import { Device } from './device.model';
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  MessageBody,
+  ConnectedSocket,
+  type OnGatewayConnection,
+  type OnGatewayDisconnect,
+} from "@nestjs/websockets"
+import { Logger } from "@nestjs/common"
+import type { Server, Socket } from "socket.io"
+import type { Device } from "./device.model"
+import type { NetworkScanProgress } from "./network.types"
 
 @WebSocketGateway({
   cors: {
-    origin: '*', // En production, spécifier l'origine exacte
+    origin: "*",
   },
 })
-export class NetworkGateway {
+export class NetworkGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
-  server: Server;
+  server: Server
 
-  private readonly logger = new Logger(NetworkGateway.name);
-  private updateIntervals: Map<string, NodeJS.Timeout> = new Map();
+  private readonly logger = new Logger(NetworkGateway.name)
+  private connectedClients = new Set<string>()
 
-  constructor(private readonly networkService: NetworkService) {}
-
-  // Connexion d'un client
   handleConnection(client: Socket) {
-    this.logger.log(`Client connecte: ${client.id}`);
+    this.connectedClients.add(client.id)
+    this.logger.log(`[WS] Client connecté: ${client.id} (${this.connectedClients.size} total)`)
   }
 
-  // Déconnexion d'un client
   handleDisconnect(client: Socket) {
-    this.logger.log(`Client deconnecte: ${client.id}`);
-    // Nettoyage des intervalles pour ce client
-    this.updateIntervals.forEach((interval, key) => {
-      if (key.startsWith(client.id)) {
-        clearInterval(interval);
-        this.updateIntervals.delete(key);
-      }
-    });
+    this.connectedClients.delete(client.id)
+    this.logger.log(`[WS] Client déconnecté: ${client.id} (${this.connectedClients.size} total)`)
   }
 
-  // Demande de stats en temps reel pour le reseau
-  @SubscribeMessage('subscribeNetworkStats')
-  async handleNetworkStatsSubscription(client: Socket) {
-    const intervalKey = `${client.id}-network`;
-    
-    // Nettoyage de l'ancien intervalle si existe
-    if (this.updateIntervals.has(intervalKey)) {
-      clearInterval(this.updateIntervals.get(intervalKey));
-    }
-
-    // Envoi initial
-    const stats = await this.networkService.getNetworkStats('24h');
-    client.emit('networkStats', stats);
-
-    // Mise à jour toutes les 5 secondes
-    const interval = setInterval(async () => {
-      try {
-        const stats = await this.networkService.getNetworkStats('24h');
-        client.emit('networkStats', stats);
-      } catch (error) {
-        this.logger.error(`Erreur mise a jour stats reseau: ${error.message}`);
-      }
-    }, 5000);
-
-    this.updateIntervals.set(intervalKey, interval);
+  @SubscribeMessage("join-network-room")
+  handleJoinRoom(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    client.join("network-updates")
+    this.logger.debug(`[WS] Client ${client.id} rejoint la room network-updates`)
   }
 
-  // Demande de stats en temps reel pour un appareil spécifique
-  @SubscribeMessage('subscribeDeviceStats')
-  async handleDeviceStatsSubscription(client: Socket, deviceId: string) {
-    const intervalKey = `${client.id}-device-${deviceId}`;
-    
-    // Nettoyage de l'ancien intervalle si existe
-    if (this.updateIntervals.has(intervalKey)) {
-      clearInterval(this.updateIntervals.get(intervalKey));
-    }
-
-    // Envoi initial
-    const stats = await this.networkService.getDeviceStats(deviceId, '1h');
-    client.emit(`deviceStats-${deviceId}`, stats);
-
-    // Mise à jour toutes les 5 secondes
-    const interval = setInterval(async () => {
-      try {
-        const stats = await this.networkService.getDeviceStats(deviceId, '1h');
-        client.emit(`deviceStats-${deviceId}`, stats);
-      } catch (error) {
-        this.logger.error(`Erreur mise a jour stats appareil: ${error.message}`);
-      }
-    }, 5000);
-
-    this.updateIntervals.set(intervalKey, interval);
+  @SubscribeMessage("leave-network-room")
+  handleLeaveRoom(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    client.leave("network-updates")
+    this.logger.debug(`[WS] Client ${client.id} quitte la room network-updates`)
   }
 
-  // Désabonnement des stats d'un appareil
-  @SubscribeMessage('unsubscribeDeviceStats')
-  handleDeviceStatsUnsubscription(client: Socket, deviceId: string) {
-    const intervalKey = `${client.id}-device-${deviceId}`;
-    if (this.updateIntervals.has(intervalKey)) {
-      clearInterval(this.updateIntervals.get(intervalKey));
-      this.updateIntervals.delete(intervalKey);
-    }
+  broadcastDeviceChanges(changes: {
+    added: Device[]
+    updated: Device[]
+    removed: Device[]
+  }) {
+    this.server.to("network-updates").emit("device-changes", {
+      type: "device-changes",
+      data: changes,
+      timestamp: new Date(),
+    })
+
+    this.logger.log(
+      `[WS] Diffusion changements appareils: +${changes.added.length} ~${changes.updated.length} -${changes.removed.length}`,
+    )
   }
 
-  // Désabonnement des stats du réseau
-  @SubscribeMessage('unsubscribeNetworkStats')
-  handleNetworkStatsUnsubscription(client: Socket) {
-    const intervalKey = `${client.id}-network`;
-    if (this.updateIntervals.has(intervalKey)) {
-      clearInterval(this.updateIntervals.get(intervalKey));
-      this.updateIntervals.delete(intervalKey);
-    }
+  broadcastScanProgress(progress: NetworkScanProgress) {
+    this.server.to("network-updates").emit("scan-progress", {
+      type: "scan-progress",
+      data: progress,
+      timestamp: new Date(),
+    })
   }
-} 
+
+  broadcastScanComplete(devices: Device[]) {
+    this.server.to("network-updates").emit("scan-complete", {
+      type: "scan-complete",
+      data: { devices, count: devices.length },
+      timestamp: new Date(),
+    })
+
+    this.logger.log(`[WS] Diffusion scan terminé: ${devices.length} appareils`)
+  }
+
+  broadcastError(error: string) {
+    this.server.to("network-updates").emit("error", {
+      type: "error",
+      data: { message: error },
+      timestamp: new Date(),
+    })
+
+    this.logger.error(`[WS] Diffusion erreur: ${error}`)
+  }
+}

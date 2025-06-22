@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import authService from '../../services/auth.service'
 import {
@@ -30,6 +30,8 @@ import {
   CTooltip,
   CSpinner,
   CAlert,
+  CProgress,
+  CProgressBar,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { 
@@ -44,6 +46,7 @@ import {
   cilXCircle,
 } from '@coreui/icons'
 import { API_CONFIG } from '../../config/api.config'
+import { io } from "socket.io-client"
 
 // Configuration de l'URL de base de l'API
 axios.defaults.baseURL = API_CONFIG.BASE_URL
@@ -63,6 +66,10 @@ const Devices = () => {
     os: '',
     deviceType: '',
   })
+  const [scanProgress, setScanProgress] = useState(null)
+  const [socket, setSocket] = useState(null)
+  const [showConfetti, setShowConfetti] = useState(false)
+  const confettiRef = useRef(null)
 
   // Initialisation du token d'authentification
   useEffect(() => {
@@ -72,7 +79,6 @@ const Devices = () => {
       authService.setAuthHeader(token)
       console.log('Headers axios configurés:', axios.defaults.headers.common)
     } else {
-      console.log('Redirection vers la page de connexion...')
       window.location.href = '/login'
     }
   }, [])
@@ -163,21 +169,17 @@ const Devices = () => {
       setLoading(true)
       const token = authService.getToken()
       if (!token) {
-        throw new Error('Non authentifié')
+        throw new Error('Non authentifie')
       }
-
       const headers = {
         'Authorization': `Bearer ${token}`
       }
-
       if (selectedDevice) {
-        // Modification
         await axios.put(`/api/network/devices/${selectedDevice.id}`, formData, { headers })
       } else {
-        // Ajout
         await axios.post('/api/network/devices', formData, { headers })
       }
-      await fetchDevices() // Recharger la liste
+      await fetchDevices()
       setVisible(false)
       setSelectedDevice(null)
       setFormData({
@@ -187,6 +189,9 @@ const Devices = () => {
         os: '',
         deviceType: '',
       })
+      // Feedback visuel ajout/modif
+      setShowConfetti(true)
+      setTimeout(() => setShowConfetti(false), 2000)
     } catch (err) {
       setError('Erreur lors de l\'enregistrement: ' + (err.response?.data?.message || err.message))
     } finally {
@@ -196,20 +201,22 @@ const Devices = () => {
 
   // Fonction pour supprimer un appareil
   const handleDelete = async (deviceId) => {
-    if (window.confirm('Êtes-vous sûr de vouloir supprimer cet appareil ?')) {
+    if (window.confirm('Etes-vous sur de vouloir supprimer cet appareil ?')) {
       try {
         setLoading(true)
         const token = authService.getToken()
         if (!token) {
-          throw new Error('Non authentifié')
+          throw new Error('Non authentifie')
         }
-
         await axios.delete(`/api/network/devices/${deviceId}`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         })
-        await fetchDevices() // Recharger la liste
+        await fetchDevices()
+        // Feedback visuel suppression
+        setShowConfetti(true)
+        setTimeout(() => setShowConfetti(false), 1200)
       } catch (err) {
         setError('Erreur lors de la suppression: ' + (err.response?.data?.message || err.message))
       } finally {
@@ -325,8 +332,59 @@ const Devices = () => {
     })
   }
 
+  useEffect(() => {
+    // Initialisation du socket pour la progression du scan
+    const s = io("http://localhost:3000")
+    setSocket(s)
+    s.emit("join-network-room")
+    s.on("scan-progress", (msg) => {
+      setScanProgress(msg.data)
+    })
+    s.on("scan-complete", () => {
+      setScanProgress(null)
+      setShowConfetti(true)
+      fetchDevices()
+      setTimeout(() => setShowConfetti(false), 3500)
+    })
+    s.on("error", (msg) => {
+      setScanProgress(null)
+      setError(msg.data?.message || "Erreur lors du scan reseau")
+    })
+    return () => {
+      s.emit("leave-network-room")
+      s.disconnect()
+    }
+  }, [])
+
+  const scanButtonDisabled = loading || !!scanProgress
+
   return (
     <>
+      {/* Confettis animés */}
+      {showConfetti && (
+        <div ref={confettiRef} style={{
+          position: 'fixed',
+          top: 0, left: 0, width: '100vw', height: '100vh',
+          pointerEvents: 'none',
+          zIndex: 9999,
+          overflow: 'hidden',
+        }}>
+          {[...Array(60)].map((_, i) => (
+            <div key={i} style={{
+              position: 'absolute',
+              left: `${Math.random()*100}%`,
+              top: `${Math.random()*100}%`,
+              width: 12,
+              height: 12,
+              borderRadius: '50%',
+              background: `hsl(${Math.random()*360},90%,60%)`,
+              opacity: 0.7,
+              transform: `scale(${0.7+Math.random()*1.2})`,
+              animation: `confetti-fall 1.2s ${Math.random()*2}s cubic-bezier(.2,.7,.4,1) forwards`,
+            }} />
+          ))}
+        </div>
+      )}
       <CCard className="mb-4">
         <CCardHeader>
           <CRow className="align-items-center">
@@ -334,49 +392,59 @@ const Devices = () => {
               <h4 className="mb-0">Gestion des Appareils</h4>
             </CCol>
             <CCol xs="auto" className="ms-auto">
-              <CButton 
-                color="primary" 
-                onClick={() => {
-                  setSelectedDevice(null)
-                  setVisible(true)
-                }}
-                className="me-2"
-              >
-                <CIcon icon={cilPlus} className="me-2" />
-                Ajouter un appareil
-              </CButton>
-              <CButton 
-                color="info" 
-                onClick={handleScan}
-                disabled={loading}
-                className="me-2"
-              >
-                {loading ? (
-                  <>
+              <CTooltip content="Ajouter un nouvel appareil sur le reseau">
+                <CButton 
+                  color="primary" 
+                  onClick={() => {
+                    setSelectedDevice(null)
+                    setVisible(true)
+                  }}
+                  className="me-2"
+                  style={{ borderRadius: "30px", fontWeight: "bold", boxShadow: "0 0 8px #007bff55" }}
+                >
+                  <CIcon icon={cilPlus} className="me-2" />
+                  Ajouter
+                </CButton>
+              </CTooltip>
+              <CTooltip content="Scanner tout le reseau (fun garanti)">
+                <CButton 
+                  color="success" 
+                  onClick={handleScan}
+                  disabled={scanButtonDisabled}
+                  className="me-2 scan-radar-btn"
+                  style={{ borderRadius: "50%", width: 56, height: 56, boxShadow: scanButtonDisabled ? "none" : "0 0 16px #4be04b99", position: 'relative', overflow: 'hidden' }}
+                >
+                  <span className="ripple" />
+                  <span className="radar-icon">
+                    <CIcon icon={cilSearch} className={scanButtonDisabled ? "spin" : "radar-anim"} style={{ fontSize: 28 }} />
+                  </span>
+                </CButton>
+              </CTooltip>
+              <CTooltip content="Rafraichir la liste des appareils">
+                <CButton 
+                  color="secondary" 
+                  onClick={handleRefresh}
+                  disabled={loading}
+                  style={{ borderRadius: "30px" }}
+                >
+                  {loading ? (
                     <CSpinner size="sm" className="me-2" />
-                    Scan en cours (peut prendre jusqu'a 5 minutes)...
-                  </>
-                ) : (
-                  <>
-                    <CIcon icon={cilSearch} className="me-2" />
-                    Scanner le reseau
-                  </>
-                )}
-              </CButton>
-              <CButton 
-                color="secondary" 
-                onClick={handleRefresh}
-                disabled={loading}
-              >
-                {loading ? (
-                  <CSpinner size="sm" className="me-2" />
-                ) : (
-                  <CIcon icon={cilReload} className="me-2" />
-                )}
-                Rafraichir
-              </CButton>
+                  ) : (
+                    <CIcon icon={cilReload} className="me-2" />
+                  )}
+                  Rafraichir
+                </CButton>
+              </CTooltip>
             </CCol>
           </CRow>
+          {/* Barre de progression du scan avec effet degrade */}
+          {scanProgress && (
+            <CProgress className="mt-3 progress-fun" style={{ height: "22px", background: "#e0e0e0" }} animated>
+              <CProgressBar value={scanProgress.progress * 100} style={{ background: "linear-gradient(90deg,#4be04b,#00cfff 80%,#ffb300)", color: '#222', fontWeight: 'bold', fontSize: 18 }}>
+                {Math.round(scanProgress.progress * 100)}% - {scanProgress.currentStep}
+              </CProgressBar>
+            </CProgress>
+          )}
         </CCardHeader>
         <CCardBody>
           {error && (
@@ -396,24 +464,24 @@ const Devices = () => {
             />
           </CInputGroup>
 
-          <CTable hover responsive>
+          <CTable hover responsive className="fun-table">
             <CTableHead>
               <CTableRow>
                 <CTableHeaderCell>Hostname</CTableHeaderCell>
                 <CTableHeaderCell>Type</CTableHeaderCell>
                 <CTableHeaderCell>Adresse IP</CTableHeaderCell>
                 <CTableHeaderCell>MAC</CTableHeaderCell>
-                <CTableHeaderCell>Système</CTableHeaderCell>
+                <CTableHeaderCell>Systeme</CTableHeaderCell>
                 <CTableHeaderCell>Statut</CTableHeaderCell>
-                <CTableHeaderCell>Dernière vue</CTableHeaderCell>
+                <CTableHeaderCell>Derniere vue</CTableHeaderCell>
                 <CTableHeaderCell>Actions</CTableHeaderCell>
               </CTableRow>
             </CTableHead>
             <CTableBody>
-              {filteredDevices.map((device) => {
+              {filteredDevices.map((device, idx) => {
                 const status = getDeviceStatus(device.lastSeen)
                 return (
-                  <CTableRow key={device.id}>
+                  <CTableRow key={device.id} style={{ animation: `fadeIn .7s ${0.1*idx}s both` }}>
                     <CTableDataCell>
                       <div className="d-flex align-items-center">
                         {device.hostname}
@@ -429,30 +497,36 @@ const Devices = () => {
                     <CTableDataCell>{device.macAddress}</CTableDataCell>
                     <CTableDataCell>{device.os}</CTableDataCell>
                     <CTableDataCell>
-                      <CBadge color={status.color}>
+                      <CBadge color={status.color} style={{ fontSize: 15, padding: '6px 12px' }}>
                         <CIcon icon={status.icon} className="me-1" />
                         {status.status}
                       </CBadge>
                     </CTableDataCell>
                     <CTableDataCell>{new Date(device.lastSeen).toLocaleString()}</CTableDataCell>
                     <CTableDataCell>
-                      <CButton 
-                        color="primary" 
-                        variant="ghost" 
-                        size="sm" 
-                        className="me-2"
-                        onClick={() => handleEdit(device)}
-                      >
-                        <CIcon icon={cilPencil} />
-                      </CButton>
-                      <CButton 
-                        color="danger" 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={() => handleDelete(device.id)}
-                      >
-                        <CIcon icon={cilTrash} />
-                      </CButton>
+                      <CTooltip content="Editer cet appareil">
+                        <CButton 
+                          color="primary" 
+                          variant="ghost" 
+                          size="sm" 
+                          className="me-2"
+                          onClick={() => handleEdit(device)}
+                          style={{ borderRadius: 12 }}
+                        >
+                          <CIcon icon={cilPencil} />
+                        </CButton>
+                      </CTooltip>
+                      <CTooltip content="Supprimer cet appareil (attention)">
+                        <CButton 
+                          color="danger" 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleDelete(device.id)}
+                          style={{ borderRadius: 12 }}
+                        >
+                          <CIcon icon={cilTrash} />
+                        </CButton>
+                      </CTooltip>
                     </CTableDataCell>
                   </CTableRow>
                 )
@@ -556,6 +630,61 @@ const Devices = () => {
           </CButton>
         </CModalFooter>
       </CModal>
+
+      {/* Ajout du style pour l'animation de l'icone scan, confettis, fadeIn, radar, ripple */}
+      <style>{`
+      .spin {
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        100% { transform: rotate(360deg); }
+      }
+      .radar-anim {
+        animation: radarPulse 1.2s infinite cubic-bezier(.4,0,.2,1);
+        filter: drop-shadow(0 0 8px #4be04b);
+      }
+      @keyframes radarPulse {
+        0% { transform: scale(1); opacity: 1; }
+        70% { transform: scale(1.18); opacity: 0.7; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      .scan-radar-btn .ripple {
+        position: absolute;
+        left: 50%; top: 50%;
+        width: 120%; height: 120%;
+        background: radial-gradient(circle,#4be04b55 0%,transparent 70%);
+        transform: translate(-50%,-50%);
+        pointer-events: none;
+        animation: rippleAnim 1.2s infinite linear;
+        opacity: 0.7;
+      }
+      @keyframes rippleAnim {
+        0% { opacity: 0.7; transform: translate(-50%,-50%) scale(1); }
+        80% { opacity: 0.1; transform: translate(-50%,-50%) scale(1.25); }
+        100% { opacity: 0; transform: translate(-50%,-50%) scale(1.4); }
+      }
+      @keyframes confetti-fall {
+        0% { opacity: 0; transform: translateY(-40px) scale(0.7); }
+        30% { opacity: 1; }
+        100% { opacity: 0; transform: translateY(100vh) scale(1.2); }
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: none; }
+      }
+      .fun-table tbody tr {
+        transition: box-shadow 0.2s;
+      }
+      .fun-table tbody tr:hover {
+        box-shadow: 0 2px 16px #00cfff22;
+        background: #f8fcff;
+      }
+      .progress-fun .progress-bar {
+        font-weight: bold;
+        letter-spacing: 1px;
+        text-shadow: 0 1px 2px #fff;
+      }
+      `}</style>
     </>
   )
 }
