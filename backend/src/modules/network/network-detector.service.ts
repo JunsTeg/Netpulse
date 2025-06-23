@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common"
 import { Cron, CronExpression } from "@nestjs/schedule"
-import type { NetworkService } from "./network.service"
-import type { NetworkGateway } from "./network.gateway"
+import { NetworkService } from "./network.service"
+import { NetworkGateway } from "./network.gateway"
 import type { Device } from "./device.model"
 
 @Injectable()
@@ -24,9 +24,9 @@ export class NetworkDetectorService {
 
     try {
       this.isScanning = true
-      this.logger.log("[DETECTOR] Démarrage scan périodique")
+      this.logger.log("[DETECTOR] Démarrage scan périodique automatique")
 
-      const result = await this.networkService.scanNetwork("192.168.1.0/24")
+      const result = await this.networkService.scanNetwork("192.168.1.0/24", "system-auto-scan")
 
       if (result.success) {
         await this.processDeviceChanges(result.devices)

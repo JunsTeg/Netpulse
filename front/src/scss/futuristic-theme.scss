@@ -1,0 +1,1009 @@
+// Thème Futuristique - NetPulse
+// Système dual : Voie Lactée Sombre & Voie Lactée Claire
+
+:root {
+  // Mode Sombre - Voie Lactée
+  --galaxy-dark-primary: #000000;
+  --galaxy-dark-secondary: #0a0a0a;
+  --galaxy-dark-accent: #4a9eff;
+  --galaxy-dark-accent-hover: #6bb3ff;
+  --galaxy-dark-text: #e8f4fd;
+  --galaxy-dark-text-muted: #a8c7e8;
+  --galaxy-dark-border: #1a1a1a;
+  --galaxy-dark-success: #00d4aa;
+  --galaxy-dark-warning: #ffb74a;
+  --galaxy-dark-danger: #ff6b6b;
+  --galaxy-dark-info: #4a9eff;
+  
+  // Mode Clair - Voie Lactée Élégante (REFONDU)
+  --galaxy-light-primary: #ffffff;
+  --galaxy-light-secondary: #f8fafc;
+  --galaxy-light-accent: #475569;
+  --galaxy-light-accent-hover: #64748b;
+  --galaxy-light-text: #1e293b;
+  --galaxy-light-text-muted: #64748b;
+  --galaxy-light-border: #e2e8f0;
+  --galaxy-light-success: #059669;
+  --galaxy-light-warning: #d97706;
+  --galaxy-light-danger: #dc2626;
+  --galaxy-light-info: #475569;
+  
+  // Effets spatiaux - Mode Sombre
+  --space-glow-dark: 0 0 20px rgba(74, 158, 255, 0.3);
+  --space-glow-strong-dark: 0 0 30px rgba(74, 158, 255, 0.5);
+  --nebula-gradient-dark: linear-gradient(135deg, #000000 0%, #0a0a0a 50%, #1a1a1a 100%);
+  --starfield-bg-dark: radial-gradient(ellipse at center, #0a0a0a 0%, #000000 100%);
+  
+  // Effets spatiaux - Mode Clair (REFONDU)
+  --space-glow-light: 0 2px 8px rgba(71, 85, 105, 0.08);
+  --space-glow-strong-light: 0 4px 16px rgba(71, 85, 105, 0.12);
+  --nebula-gradient-light: linear-gradient(135deg, #ffffff 0%, #f8fafc 50%, #f1f5f9 100%);
+  --starfield-bg-light: radial-gradient(ellipse at center, #f8fafc 0%, #ffffff 100%);
+}
+
+// Animation des étoiles
+@keyframes twinkle {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 5px rgba(74, 158, 255, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(74, 158, 255, 0.6); }
+}
+
+@keyframes pulse-light {
+  0%, 100% { box-shadow: 0 0 5px rgba(71, 85, 105, 0.1); }
+  50% { box-shadow: 0 0 15px rgba(71, 85, 105, 0.2); }
+}
+
+@keyframes orbit {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+// ===== MODE SOMBRE - VOIE LACTÉE =====
+.netpulse-futuristic.netpulse-dark {
+  background: var(--starfield-bg-dark);
+  color: var(--galaxy-dark-text);
+  font-family: 'Orbitron', 'Arial', sans-serif;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.netpulse-futuristic.netpulse-dark::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: 
+    radial-gradient(2px 2px at 20px 30px, #4a9eff, transparent),
+    radial-gradient(2px 2px at 40px 70px, rgba(74, 158, 255, 0.8), transparent),
+    radial-gradient(1px 1px at 90px 40px, #6bb3ff, transparent),
+    radial-gradient(1px 1px at 130px 80px, rgba(74, 158, 255, 0.6), transparent),
+    radial-gradient(2px 2px at 160px 30px, #4a9eff, transparent);
+  background-repeat: repeat;
+  background-size: 200px 100px;
+  animation: twinkle 4s ease-in-out infinite;
+  z-index: -1;
+  opacity: 0.4;
+}
+
+.netpulse-futuristic.netpulse-dark .sidebar {
+  background: var(--nebula-gradient-dark) !important;
+  border-right: 2px solid var(--galaxy-dark-accent) !important;
+  box-shadow: var(--space-glow-strong-dark) !important;
+  backdrop-filter: blur(10px);
+}
+
+.netpulse-futuristic.netpulse-dark .sidebar .sidebar-brand {
+  background: linear-gradient(45deg, var(--galaxy-dark-accent), var(--galaxy-dark-accent-hover));
+  border-bottom: 2px solid var(--galaxy-dark-accent);
+  position: relative;
+  overflow: hidden;
+}
+
+.netpulse-futuristic.netpulse-dark .sidebar .sidebar-brand::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(74, 158, 255, 0.2), transparent);
+  animation: float 3s ease-in-out infinite;
+}
+
+.netpulse-futuristic.netpulse-dark .sidebar .sidebar-brand h1 {
+  background: linear-gradient(45deg, #4a9eff, #6bb3ff, #8cc5ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 0 10px rgba(74, 158, 255, 0.5);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.netpulse-futuristic.netpulse-dark .sidebar .sidebar-nav .nav-link {
+  color: var(--galaxy-dark-text) !important;
+  border-radius: 8px;
+  margin: 2px 8px;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.netpulse-futuristic.netpulse-dark .sidebar .sidebar-nav .nav-link::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(74, 158, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.netpulse-futuristic.netpulse-dark .sidebar .sidebar-nav .nav-link:hover {
+  background: rgba(74, 158, 255, 0.1) !important;
+  color: var(--galaxy-dark-accent) !important;
+  box-shadow: var(--space-glow-dark);
+  transform: translateX(5px);
+}
+
+.netpulse-futuristic.netpulse-dark .sidebar .sidebar-nav .nav-link:hover::before {
+  left: 100%;
+}
+
+.netpulse-futuristic.netpulse-dark .sidebar .sidebar-nav .nav-link.active {
+  background: linear-gradient(45deg, var(--galaxy-dark-accent), var(--galaxy-dark-accent-hover)) !important;
+  color: white !important;
+  box-shadow: var(--space-glow-strong-dark);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.netpulse-futuristic.netpulse-dark .header {
+  background: var(--nebula-gradient-dark) !important;
+  border-bottom: 2px solid var(--galaxy-dark-accent) !important;
+  box-shadow: var(--space-glow-dark) !important;
+  backdrop-filter: blur(10px);
+}
+
+.netpulse-futuristic.netpulse-dark .header .navbar-nav .nav-link {
+  color: var(--galaxy-dark-text) !important;
+  transition: all 0.3s ease;
+}
+
+.netpulse-futuristic.netpulse-dark .header .navbar-nav .nav-link:hover {
+  color: var(--galaxy-dark-accent) !important;
+  text-shadow: 0 0 10px rgba(74, 158, 255, 0.5);
+}
+
+.netpulse-futuristic.netpulse-dark .header .dropdown-toggle {
+  color: var(--galaxy-dark-text) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .header .dropdown-toggle:hover {
+  color: var(--galaxy-dark-accent) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .wrapper {
+  background: var(--starfield-bg-dark);
+  position: relative;
+}
+
+.netpulse-futuristic.netpulse-dark .wrapper::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: 
+    radial-gradient(circle at 20% 80%, rgba(74, 158, 255, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(0, 212, 170, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(255, 183, 74, 0.05) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.netpulse-futuristic.netpulse-dark .card {
+  background: rgba(10, 10, 10, 0.9) !important;
+  border: 1px solid var(--galaxy-dark-border) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--space-glow-dark) !important;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.netpulse-futuristic.netpulse-dark .card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, var(--galaxy-dark-accent), var(--galaxy-dark-success), var(--galaxy-dark-warning));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.netpulse-futuristic.netpulse-dark .card:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--space-glow-strong-dark);
+}
+
+.netpulse-futuristic.netpulse-dark .card:hover::before {
+  opacity: 1;
+}
+
+.netpulse-futuristic.netpulse-dark .card .card-header {
+  background: rgba(74, 158, 255, 0.1) !important;
+  border-bottom: 1px solid var(--galaxy-dark-border) !important;
+  color: var(--galaxy-dark-accent) !important;
+  font-weight: bold;
+}
+
+.netpulse-futuristic.netpulse-dark .card .card-body {
+  color: var(--galaxy-dark-text) !important;
+}
+
+// ===== MODE CLAIR - VOIE LACTÉE ÉLÉGANTE (REFONDU) =====
+.netpulse-futuristic.netpulse-light {
+  background: var(--starfield-bg-light);
+  color: var(--galaxy-light-text);
+  font-family: 'Orbitron', 'Arial', sans-serif;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.netpulse-futuristic.netpulse-light::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: 
+    radial-gradient(2px 2px at 20px 30px, #475569, transparent),
+    radial-gradient(2px 2px at 40px 70px, rgba(71, 85, 105, 0.4), transparent),
+    radial-gradient(1px 1px at 90px 40px, #64748b, transparent),
+    radial-gradient(1px 1px at 130px 80px, rgba(100, 116, 139, 0.3), transparent),
+    radial-gradient(2px 2px at 160px 30px, #475569, transparent);
+  background-repeat: repeat;
+  background-size: 200px 100px;
+  animation: twinkle 4s ease-in-out infinite;
+  z-index: -1;
+  opacity: 0.2;
+}
+
+.netpulse-futuristic.netpulse-light .sidebar {
+  background: var(--nebula-gradient-light) !important;
+  border-right: 2px solid var(--galaxy-light-accent) !important;
+  box-shadow: var(--space-glow-strong-light) !important;
+  backdrop-filter: blur(10px);
+}
+
+.netpulse-futuristic.netpulse-light .sidebar .sidebar-brand {
+  background: linear-gradient(45deg, var(--galaxy-light-accent), var(--galaxy-light-accent-hover));
+  border-bottom: 2px solid var(--galaxy-light-accent);
+  position: relative;
+  overflow: hidden;
+}
+
+.netpulse-futuristic.netpulse-light .sidebar .sidebar-brand::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(71, 85, 105, 0.1), transparent);
+  animation: float 3s ease-in-out infinite;
+}
+
+.netpulse-futuristic.netpulse-light .sidebar .sidebar-brand h1 {
+  background: linear-gradient(45deg, #475569, #64748b, #94a3b8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 0 10px rgba(71, 85, 105, 0.3);
+  animation: pulse-light 2s ease-in-out infinite;
+}
+
+.netpulse-futuristic.netpulse-light .sidebar .sidebar-nav .nav-link {
+  color: var(--galaxy-light-text) !important;
+  border-radius: 8px;
+  margin: 2px 8px;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.netpulse-futuristic.netpulse-light .sidebar .sidebar-nav .nav-link .c-icon {
+  color: #64748b !important;
+  filter: drop-shadow(0 1px 2px rgba(71, 85, 105, 0.12));
+  opacity: 1 !important;
+  visibility: visible !important;
+  transition: color 0.3s, filter 0.3s;
+}
+
+.netpulse-futuristic.netpulse-light .sidebar .sidebar-nav .nav-link:hover .c-icon {
+  color: #475569 !important;
+  filter: drop-shadow(0 2px 4px rgba(71, 85, 105, 0.18));
+}
+
+.netpulse-futuristic.netpulse-light .sidebar .sidebar-nav .nav-link.active .c-icon {
+  color: white !important;
+  filter: drop-shadow(0 2px 4px rgba(255, 255, 255, 0.3));
+}
+
+.netpulse-futuristic.netpulse-light .sidebar .sidebar-nav .nav-link::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(71, 85, 105, 0.1), transparent);
+  transition: left 0.5s ease;
+}
+
+.netpulse-futuristic.netpulse-light .sidebar .sidebar-nav .nav-link:hover {
+  background: rgba(71, 85, 105, 0.05) !important;
+  color: var(--galaxy-light-accent) !important;
+  box-shadow: var(--space-glow-light);
+  transform: translateX(5px);
+}
+
+.netpulse-futuristic.netpulse-light .sidebar .sidebar-nav .nav-link:hover::before {
+  left: 100%;
+}
+
+.netpulse-futuristic.netpulse-light .sidebar .sidebar-nav .nav-link.active {
+  background: linear-gradient(45deg, var(--galaxy-light-accent), var(--galaxy-light-accent-hover)) !important;
+  color: white !important;
+  box-shadow: var(--space-glow-strong-light);
+  animation: pulse-light 2s ease-in-out infinite;
+}
+
+.netpulse-futuristic.netpulse-light .c-sidebar-nav-icon {
+  color: #475569 !important;
+  filter: drop-shadow(0 1px 2px rgba(71, 85, 105, 0.1));
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.netpulse-futuristic.netpulse-light .c-sidebar-nav-icon:hover {
+  color: #64748b !important;
+  filter: drop-shadow(0 2px 4px rgba(71, 85, 105, 0.2));
+}
+
+.netpulse-futuristic.netpulse-light .c-sidebar-nav-link .c-sidebar-nav-icon {
+  color: #475569 !important;
+  filter: drop-shadow(0 1px 2px rgba(71, 85, 105, 0.1));
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.netpulse-futuristic.netpulse-light .c-sidebar-nav-link:hover .c-sidebar-nav-icon {
+  color: #64748b !important;
+  filter: drop-shadow(0 2px 4px rgba(71, 85, 105, 0.2));
+}
+
+.netpulse-futuristic.netpulse-light .c-sidebar-nav-link.c-active .c-sidebar-nav-icon {
+  color: white !important;
+  filter: drop-shadow(0 2px 4px rgba(255, 255, 255, 0.3));
+}
+
+.netpulse-futuristic.netpulse-light .c-sidebar-nav-dropdown-toggle::after {
+  color: #475569 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.netpulse-futuristic.netpulse-light .c-sidebar-nav-dropdown-toggle:hover::after {
+  color: #64748b !important;
+}
+
+.netpulse-futuristic.netpulse-light .c-sidebar-nav-dropdown.c-show .c-sidebar-nav-dropdown-toggle::after {
+  color: #475569 !important;
+}
+
+.netpulse-futuristic.netpulse-light .c-sidebar-nav-divider {
+  background: var(--galaxy-light-border) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.netpulse-futuristic.netpulse-light .c-sidebar-nav-badge {
+  background: #475569 !important;
+  color: white !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.netpulse-futuristic.netpulse-light .c-sidebar-nav-link:hover .c-sidebar-nav-badge {
+  background: #64748b !important;
+}
+
+.netpulse-futuristic.netpulse-light .c-sidebar-nav-link.c-active .c-sidebar-nav-badge {
+  background: white !important;
+  color: #475569 !important;
+}
+
+.netpulse-futuristic.netpulse-light .header {
+  background: var(--nebula-gradient-light) !important;
+  border-bottom: 2px solid var(--galaxy-light-accent) !important;
+  box-shadow: var(--space-glow-light) !important;
+  backdrop-filter: blur(10px);
+}
+
+.netpulse-futuristic.netpulse-light .header .navbar-nav .nav-link {
+  color: var(--galaxy-light-text) !important;
+  transition: all 0.3s ease;
+}
+
+.netpulse-futuristic.netpulse-light .header .navbar-nav .nav-link:hover {
+  color: var(--galaxy-light-accent) !important;
+  text-shadow: 0 0 10px rgba(71, 85, 105, 0.3);
+}
+
+.netpulse-futuristic.netpulse-light .header .dropdown-toggle {
+  color: var(--galaxy-light-text) !important;
+}
+
+.netpulse-futuristic.netpulse-light .header .dropdown-toggle:hover {
+  color: var(--galaxy-light-accent) !important;
+}
+
+.netpulse-futuristic.netpulse-light .wrapper {
+  background: var(--starfield-bg-light);
+  position: relative;
+}
+
+.netpulse-futuristic.netpulse-light .wrapper::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: 
+    radial-gradient(circle at 20% 80%, rgba(71, 85, 105, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(5, 150, 105, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(217, 119, 6, 0.02) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.netpulse-futuristic.netpulse-light .card {
+  background: var(--galaxy-light-primary) !important;
+  border: 1.5px solid var(--galaxy-light-border) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--space-glow-light) !important;
+  backdrop-filter: blur(6px);
+  transition: all 0.3s cubic-bezier(.4,0,.2,1);
+  position: relative;
+  overflow: hidden;
+}
+
+.netpulse-futuristic.netpulse-light .card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, var(--galaxy-light-accent), var(--galaxy-light-success), var(--galaxy-light-warning));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.netpulse-futuristic.netpulse-light .card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--space-glow-strong-light);
+  border-color: var(--galaxy-light-accent) !important;
+}
+
+.netpulse-futuristic.netpulse-light .card:hover::before {
+  opacity: 1;
+}
+
+.netpulse-futuristic.netpulse-light .card .card-header {
+  background: var(--galaxy-light-secondary) !important;
+  border-bottom: 1.5px solid var(--galaxy-light-border) !important;
+  color: var(--galaxy-light-accent) !important;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+}
+
+.netpulse-futuristic.netpulse-light .card .card-body {
+  color: var(--galaxy-light-text) !important;
+}
+
+// ===== STYLES COMMUNS POUR LES DEUX MODES =====
+
+// Boutons futuristiques - Mode Sombre
+.netpulse-futuristic.netpulse-dark .btn {
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1px !important;
+  transition: all 0.3s ease !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.netpulse-futuristic.netpulse-dark .btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.netpulse-futuristic.netpulse-dark .btn:hover::before {
+  left: 100%;
+}
+
+.netpulse-futuristic.netpulse-dark .btn.btn-primary {
+  background: linear-gradient(45deg, var(--galaxy-dark-accent), var(--galaxy-dark-accent-hover)) !important;
+  border: none !important;
+  box-shadow: var(--space-glow-dark) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .btn.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--space-glow-strong-dark) !important;
+}
+
+// Boutons futuristiques - Mode Clair (REFONDU)
+.netpulse-futuristic.netpulse-light .btn {
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1px !important;
+  transition: all 0.3s ease !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.netpulse-futuristic.netpulse-light .btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(71, 85, 105, 0.1), transparent);
+  transition: left 0.5s ease;
+}
+
+.netpulse-futuristic.netpulse-light .btn:hover::before {
+  left: 100%;
+}
+
+.netpulse-futuristic.netpulse-light .btn.btn-primary {
+  background: linear-gradient(45deg, var(--galaxy-light-accent), var(--galaxy-light-accent-hover)) !important;
+  border: none !important;
+  box-shadow: var(--space-glow-light) !important;
+  color: white !important;
+}
+
+.netpulse-futuristic.netpulse-light .btn.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--space-glow-strong-light) !important;
+}
+
+// Formulaires futuristiques - Mode Sombre
+.netpulse-futuristic.netpulse-dark .form-control,
+.netpulse-futuristic.netpulse-dark .form-select {
+  background: rgba(10, 10, 10, 0.9) !important;
+  border: 1px solid var(--galaxy-dark-border) !important;
+  border-radius: 8px !important;
+  color: var(--galaxy-dark-text) !important;
+  transition: all 0.3s ease !important;
+}
+
+.netpulse-futuristic.netpulse-dark .form-control:focus,
+.netpulse-futuristic.netpulse-dark .form-select:focus {
+  background: rgba(10, 10, 10, 0.95) !important;
+  border-color: var(--galaxy-dark-accent) !important;
+  box-shadow: var(--space-glow-dark) !important;
+  color: var(--galaxy-dark-text) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .form-control::placeholder,
+.netpulse-futuristic.netpulse-dark .form-select::placeholder {
+  color: var(--galaxy-dark-text-muted) !important;
+}
+
+// Formulaires futuristiques - Mode Clair (REFONDU)
+.netpulse-futuristic.netpulse-light .form-control,
+.netpulse-futuristic.netpulse-light .form-select {
+  background: var(--galaxy-light-primary) !important;
+  border: 1.5px solid var(--galaxy-light-border) !important;
+  border-radius: 8px !important;
+  color: var(--galaxy-light-text) !important;
+  transition: all 0.3s ease !important;
+}
+
+.netpulse-futuristic.netpulse-light .form-control:focus,
+.netpulse-futuristic.netpulse-light .form-select:focus {
+  background: var(--galaxy-light-primary) !important;
+  border-color: var(--galaxy-light-accent) !important;
+  box-shadow: var(--space-glow-light) !important;
+  color: var(--galaxy-light-text) !important;
+}
+
+.netpulse-futuristic.netpulse-light .form-control::placeholder,
+.netpulse-futuristic.netpulse-light .form-select::placeholder {
+  color: var(--galaxy-light-text-muted) !important;
+}
+
+// Tableaux futuristiques - Mode Sombre
+.netpulse-futuristic.netpulse-dark .table {
+  background: rgba(10, 10, 10, 0.9) !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: var(--space-glow-dark) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .table th {
+  background: rgba(74, 158, 255, 0.2) !important;
+  color: var(--galaxy-dark-accent) !important;
+  border-bottom: 2px solid var(--galaxy-dark-accent) !important;
+  font-weight: bold !important;
+}
+
+.netpulse-futuristic.netpulse-dark .table td {
+  color: var(--galaxy-dark-text) !important;
+  border-bottom: 1px solid var(--galaxy-dark-border) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .table tbody tr {
+  transition: all 0.3s ease !important;
+}
+
+.netpulse-futuristic.netpulse-dark .table tbody tr:hover {
+  background: rgba(74, 158, 255, 0.1) !important;
+  transform: scale(1.01);
+}
+
+// Tableaux futuristiques - Mode Clair (REFONDU)
+.netpulse-futuristic.netpulse-light .table {
+  background: var(--galaxy-light-primary) !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: var(--space-glow-light) !important;
+}
+
+.netpulse-futuristic.netpulse-light .table th {
+  background: var(--galaxy-light-secondary) !important;
+  color: var(--galaxy-light-accent) !important;
+  border-bottom: 2px solid var(--galaxy-light-accent) !important;
+  font-weight: bold !important;
+  letter-spacing: 0.5px;
+}
+
+.netpulse-futuristic.netpulse-light .table td {
+  color: var(--galaxy-light-text) !important;
+  border-bottom: 1px solid var(--galaxy-light-border) !important;
+}
+
+.netpulse-futuristic.netpulse-light .table tbody tr {
+  transition: all 0.3s ease !important;
+}
+
+.netpulse-futuristic.netpulse-light .table tbody tr:nth-child(even) {
+  background: var(--galaxy-light-secondary) !important;
+}
+
+.netpulse-futuristic.netpulse-light .table tbody tr:hover {
+  background: rgba(71, 85, 105, 0.05) !important;
+  transform: scale(1.01);
+}
+
+// Alertes futuristiques - Mode Sombre
+.netpulse-futuristic.netpulse-dark .alert {
+  border-radius: 12px !important;
+  border: none !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .alert.alert-primary {
+  background: rgba(74, 158, 255, 0.2) !important;
+  color: var(--galaxy-dark-accent) !important;
+  box-shadow: 0 0 20px rgba(74, 158, 255, 0.3) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .alert.alert-success {
+  background: rgba(0, 212, 170, 0.2) !important;
+  color: var(--galaxy-dark-success) !important;
+  box-shadow: 0 0 20px rgba(0, 212, 170, 0.3) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .alert.alert-warning {
+  background: rgba(255, 183, 74, 0.2) !important;
+  color: var(--galaxy-dark-warning) !important;
+  box-shadow: 0 0 20px rgba(255, 183, 74, 0.3) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .alert.alert-danger {
+  background: rgba(255, 107, 107, 0.2) !important;
+  color: var(--galaxy-dark-danger) !important;
+  box-shadow: 0 0 20px rgba(255, 107, 107, 0.3) !important;
+}
+
+// Alertes futuristiques - Mode Clair (REFONDU)
+.netpulse-futuristic.netpulse-light .alert {
+  border-radius: 12px !important;
+  border: none !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.netpulse-futuristic.netpulse-light .alert.alert-primary {
+  background: rgba(71, 85, 105, 0.08) !important;
+  color: var(--galaxy-light-accent) !important;
+  box-shadow: var(--space-glow-light) !important;
+  border-left: 4px solid var(--galaxy-light-accent) !important;
+}
+
+.netpulse-futuristic.netpulse-light .alert.alert-success {
+  background: rgba(5, 150, 105, 0.08) !important;
+  color: var(--galaxy-light-success) !important;
+  box-shadow: var(--space-glow-light) !important;
+  border-left: 4px solid var(--galaxy-light-success) !important;
+}
+
+.netpulse-futuristic.netpulse-light .alert.alert-warning {
+  background: rgba(217, 119, 6, 0.08) !important;
+  color: var(--galaxy-light-warning) !important;
+  box-shadow: var(--space-glow-light) !important;
+  border-left: 4px solid var(--galaxy-light-warning) !important;
+}
+
+.netpulse-futuristic.netpulse-light .alert.alert-danger {
+  background: rgba(220, 38, 38, 0.08) !important;
+  color: var(--galaxy-light-danger) !important;
+  box-shadow: var(--space-glow-light) !important;
+  border-left: 4px solid var(--galaxy-light-danger) !important;
+}
+
+// Badges futuristiques - Mode Sombre
+.netpulse-futuristic.netpulse-dark .badge {
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+.netpulse-futuristic.netpulse-dark .badge.bg-primary {
+  background: linear-gradient(45deg, var(--galaxy-dark-accent), var(--galaxy-dark-accent-hover)) !important;
+  box-shadow: 0 0 10px rgba(74, 158, 255, 0.3) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .badge.bg-success {
+  background: linear-gradient(45deg, var(--galaxy-dark-success), #00e6b8) !important;
+  box-shadow: 0 0 10px rgba(0, 212, 170, 0.3) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .badge.bg-warning {
+  background: linear-gradient(45deg, var(--galaxy-dark-warning), #ffc870) !important;
+  box-shadow: 0 0 10px rgba(255, 183, 74, 0.3) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .badge.bg-danger {
+  background: linear-gradient(45deg, var(--galaxy-dark-danger), #ff8585) !important;
+  box-shadow: 0 0 10px rgba(255, 107, 107, 0.3) !important;
+}
+
+// Badges futuristiques - Mode Clair (REFONDU)
+.netpulse-futuristic.netpulse-light .badge {
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+.netpulse-futuristic.netpulse-light .badge.bg-primary {
+  background: linear-gradient(45deg, var(--galaxy-light-accent), var(--galaxy-light-accent-hover)) !important;
+  box-shadow: var(--space-glow-light) !important;
+  color: white !important;
+}
+
+.netpulse-futuristic.netpulse-light .badge.bg-success {
+  background: linear-gradient(45deg, var(--galaxy-light-success), #10b981) !important;
+  box-shadow: var(--space-glow-light) !important;
+  color: white !important;
+}
+
+.netpulse-futuristic.netpulse-light .badge.bg-warning {
+  background: linear-gradient(45deg, var(--galaxy-light-warning), #f59e0b) !important;
+  box-shadow: var(--space-glow-light) !important;
+  color: white !important;
+}
+
+.netpulse-futuristic.netpulse-light .badge.bg-danger {
+  background: linear-gradient(45deg, var(--galaxy-light-danger), #ef4444) !important;
+  box-shadow: var(--space-glow-light) !important;
+  color: white !important;
+}
+
+// Progress bars futuristiques - Mode Sombre
+.netpulse-futuristic.netpulse-dark .progress {
+  background: rgba(10, 10, 10, 0.8) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .progress .progress-bar {
+  background: linear-gradient(45deg, var(--galaxy-dark-accent), var(--galaxy-dark-accent-hover)) !important;
+  box-shadow: 0 0 10px rgba(74, 158, 255, 0.5) !important;
+  animation: pulse 2s ease-in-out infinite !important;
+}
+
+// Progress bars futuristiques - Mode Clair (REFONDU)
+.netpulse-futuristic.netpulse-light .progress {
+  background: var(--galaxy-light-secondary) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.05) !important;
+}
+
+.netpulse-futuristic.netpulse-light .progress .progress-bar {
+  background: linear-gradient(45deg, var(--galaxy-light-accent), var(--galaxy-light-accent-hover)) !important;
+  box-shadow: var(--space-glow-light) !important;
+  animation: pulse-light 2s ease-in-out infinite !important;
+}
+
+// Modals futuristiques - Mode Sombre
+.netpulse-futuristic.netpulse-dark .modal-content {
+  background: var(--nebula-gradient-dark) !important;
+  border: 2px solid var(--galaxy-dark-accent) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--space-glow-strong-dark) !important;
+  backdrop-filter: blur(15px) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .modal-content .modal-header {
+  border-bottom: 1px solid var(--galaxy-dark-border) !important;
+  color: var(--galaxy-dark-accent) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .modal-content .modal-body {
+  color: var(--galaxy-dark-text) !important;
+}
+
+.netpulse-futuristic.netpulse-dark .modal-content .modal-footer {
+  border-top: 1px solid var(--galaxy-dark-border) !important;
+}
+
+// Modals futuristiques - Mode Clair (REFONDU)
+.netpulse-futuristic.netpulse-light .modal-content {
+  background: var(--galaxy-light-primary) !important;
+  border: 2px solid var(--galaxy-light-accent) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--space-glow-strong-light) !important;
+  backdrop-filter: blur(15px) !important;
+}
+
+.netpulse-futuristic.netpulse-light .modal-content .modal-header {
+  border-bottom: 1px solid var(--galaxy-light-border) !important;
+  color: var(--galaxy-light-accent) !important;
+}
+
+.netpulse-futuristic.netpulse-light .modal-content .modal-body {
+  color: var(--galaxy-light-text) !important;
+}
+
+.netpulse-futuristic.netpulse-light .modal-content .modal-footer {
+  border-top: 1px solid var(--galaxy-light-border) !important;
+}
+
+// Scrollbar personnalisée - Mode Sombre
+.netpulse-futuristic.netpulse-dark ::-webkit-scrollbar {
+  width: 8px;
+}
+
+.netpulse-futuristic.netpulse-dark ::-webkit-scrollbar-track {
+  background: var(--galaxy-dark-secondary);
+}
+
+.netpulse-futuristic.netpulse-dark ::-webkit-scrollbar-thumb {
+  background: linear-gradient(45deg, var(--galaxy-dark-accent), var(--galaxy-dark-accent-hover));
+  border-radius: 4px;
+}
+
+.netpulse-futuristic.netpulse-dark ::-webkit-scrollbar-thumb:hover {
+  background: var(--galaxy-dark-accent-hover);
+}
+
+// Scrollbar personnalisée - Mode Clair (REFONDU)
+.netpulse-futuristic.netpulse-light ::-webkit-scrollbar {
+  width: 8px;
+}
+
+.netpulse-futuristic.netpulse-light ::-webkit-scrollbar-track {
+  background: var(--galaxy-light-secondary);
+}
+
+.netpulse-futuristic.netpulse-light ::-webkit-scrollbar-thumb {
+  background: linear-gradient(45deg, var(--galaxy-light-accent), var(--galaxy-light-accent-hover));
+  border-radius: 4px;
+}
+
+.netpulse-futuristic.netpulse-light ::-webkit-scrollbar-thumb:hover {
+  background: var(--galaxy-light-accent-hover);
+}
+
+// Responsive design
+@media (max-width: 768px) {
+  .netpulse-futuristic .sidebar {
+    backdrop-filter: blur(5px);
+  }
+  
+  .netpulse-futuristic .card {
+    margin-bottom: 1rem;
+  }
+}
+
+// Animation d'entrée pour les éléments
+.netpulse-futuristic .fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// Effet de néon pour les éléments importants - Mode Sombre
+.netpulse-futuristic.netpulse-dark .neon-glow {
+  text-shadow: 
+    0 0 5px var(--galaxy-dark-accent),
+    0 0 10px var(--galaxy-dark-accent),
+    0 0 15px var(--galaxy-dark-accent);
+  animation: neonPulse 2s ease-in-out infinite;
+}
+
+// Effet de néon pour les éléments importants - Mode Clair (REFONDU)
+.netpulse-futuristic.netpulse-light .neon-glow {
+  text-shadow: 
+    0 0 5px var(--galaxy-light-accent),
+    0 0 10px var(--galaxy-light-accent),
+    0 0 15px var(--galaxy-light-accent);
+  animation: neonPulse 2s ease-in-out infinite;
+}
+
+@keyframes neonPulse {
+  0%, 100% {
+    text-shadow: 
+      0 0 5px var(--galaxy-dark-accent),
+      0 0 10px var(--galaxy-dark-accent),
+      0 0 15px var(--galaxy-dark-accent);
+  }
+  50% {
+    text-shadow: 
+      0 0 10px var(--galaxy-dark-accent),
+      0 0 20px var(--galaxy-dark-accent),
+      0 0 30px var(--galaxy-dark-accent);
+  }
+} 

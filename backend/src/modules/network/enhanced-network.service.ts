@@ -1,7 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common"
 import { NetworkService } from "./network.service"
-import type { WindowsPowerShellService } from "./agents/windows-powershell.service"
-import type { PythonAdvancedService } from "./agents/python-advanced.service"
+import { WindowsPowerShellService } from "./agents/windows-powershell.service"
+import { PythonAdvancedService } from "./agents/python-advanced.service"
+import { NmapAgentService } from "./agents/nmap.service"
+import { TracerouteAgentService } from "./agents/traceroute.service"
+import { NetstatAgentService } from "./agents/netstat.service"
 import type { Device, NmapScanConfig } from "./device.model"
 import type { NetworkTopologyData } from "./network.types"
 import { exec } from "child_process"
@@ -39,15 +42,15 @@ interface EnhancedScanResult {
 
 @Injectable()
 export class EnhancedNetworkService extends NetworkService {
-  private readonly logger = new Logger(EnhancedNetworkService.name)
+  private readonly enhancedLogger = new Logger(EnhancedNetworkService.name)
 
   constructor(
     private readonly windowsPowerShell: WindowsPowerShellService,
     private readonly pythonAdvanced: PythonAdvancedService,
     // Injection des services parents
-    nmapAgent: any,
-    tracerouteAgent: any,
-    netstatAgent: any,
+    nmapAgent: NmapAgentService,
+    tracerouteAgent: TracerouteAgentService,
+    netstatAgent: NetstatAgentService,
   ) {
     super(nmapAgent, tracerouteAgent, netstatAgent)
   }
@@ -56,12 +59,12 @@ export class EnhancedNetworkService extends NetworkService {
     const startTime = Date.now()
 
     try {
-      this.logger.log(`[ENHANCED] Démarrage scan amélioré: ${config.target}`)
-      this.logger.log(`[ENHANCED] Méthode: ${config.scanMethod || "auto"}`)
+      this.enhancedLogger.log(`[ENHANCED] Démarrage scan amélioré: ${config.target}`)
+      this.enhancedLogger.log(`[ENHANCED] Méthode: ${config.scanMethod || "auto"}`)
 
       // Détermination de la méthode de scan optimale
       const scanMethod = await this.determineBestScanMethod(config)
-      this.logger.log(`[ENHANCED] Méthode sélectionnée: ${scanMethod}`)
+      this.enhancedLogger.log(`[ENHANCED] Méthode sélectionnée: ${scanMethod}`)
 
       let devices: Device[] = []
       let scanMethodUsed = scanMethod
@@ -101,8 +104,8 @@ export class EnhancedNetworkService extends NetworkService {
 
       const scanDuration = Date.now() - startTime
 
-      this.logger.log(`[ENHANCED] Scan terminé en ${scanDuration}ms`)
-      this.logger.log(`[ENHANCED] ${enrichedDevices.length} appareils détectés`)
+      this.enhancedLogger.log(`[ENHANCED] Scan terminé en ${scanDuration}ms`)
+      this.enhancedLogger.log(`[ENHANCED] ${enrichedDevices.length} appareils détectés`)
 
       return {
         success: true,
@@ -113,7 +116,7 @@ export class EnhancedNetworkService extends NetworkService {
         statistics,
       }
     } catch (error) {
-      this.logger.error(`[ENHANCED] Erreur scan amélioré: ${error.message}`)
+      this.enhancedLogger.error(`[ENHANCED] Erreur scan amélioré: ${error.message}`)
 
       return {
         success: false,
@@ -158,7 +161,7 @@ export class EnhancedNetworkService extends NetworkService {
       const hasPython = await this.checkPythonAvailability()
       const hasPowerShell = await this.checkPowerShellAvailability()
 
-      this.logger.log(`[ENHANCED] Environnement détecté:`, {
+      this.enhancedLogger.log(`[ENHANCED] Environnement détecté:`, {
         isWindows,
         hasAdminRights,
         hasPython,
@@ -184,7 +187,7 @@ export class EnhancedNetworkService extends NetworkService {
       // Fallback vers nmap
       return "nmap"
     } catch (error) {
-      this.logger.warn(`[ENHANCED] Erreur détection environnement: ${error.message}`)
+      this.enhancedLogger.warn(`[ENHANCED] Erreur détection environnement: ${error.message}`)
       return "nmap"
     }
   }
@@ -207,7 +210,7 @@ export class EnhancedNetworkService extends NetworkService {
 
       return result.devices.map((device) => this.windowsPowerShell.convertToDeviceModel(device))
     } catch (error) {
-      this.logger.error(`[ENHANCED] Erreur scan PowerShell: ${error.message}`)
+      this.enhancedLogger.error(`[ENHANCED] Erreur scan PowerShell: ${error.message}`)
       throw error
     }
   }
@@ -231,23 +234,23 @@ export class EnhancedNetworkService extends NetworkService {
 
       return result.devices.map((device) => this.pythonAdvanced.convertToDeviceModel(device))
     } catch (error) {
-      this.logger.error(`[ENHANCED] Erreur scan Python: ${error.message}`)
+      this.enhancedLogger.error(`[ENHANCED] Erreur scan Python: ${error.message}`)
       throw error
     }
   }
 
   private async executeHybridScan(config: EnhancedScanConfig): Promise<Device[]> {
     try {
-      this.logger.log(`[ENHANCED] Démarrage scan hybride`)
+      this.enhancedLogger.log(`[ENHANCED] Démarrage scan hybride`)
 
       // Exécution des scans en parallèle
       const [psResult, pyResult] = await Promise.allSettled([
         this.executePowerShellScan(config).catch((error) => {
-          this.logger.warn(`[HYBRID] PowerShell échoué: ${error.message}`)
+          this.enhancedLogger.warn(`[HYBRID] PowerShell échoué: ${error.message}`)
           return []
         }),
         this.executePythonScan(config).catch((error) => {
-          this.logger.warn(`[HYBRID] Python échoué: ${error.message}`)
+          this.enhancedLogger.warn(`[HYBRID] Python échoué: ${error.message}`)
           return []
         }),
       ])
@@ -255,17 +258,17 @@ export class EnhancedNetworkService extends NetworkService {
       const psDevices = psResult.status === "fulfilled" ? psResult.value : []
       const pyDevices = pyResult.status === "fulfilled" ? pyResult.value : []
 
-      this.logger.log(`[HYBRID] PowerShell: ${psDevices.length} appareils`)
-      this.logger.log(`[HYBRID] Python: ${pyDevices.length} appareils`)
+      this.enhancedLogger.log(`[HYBRID] PowerShell: ${psDevices.length} appareils`)
+      this.enhancedLogger.log(`[HYBRID] Python: ${pyDevices.length} appareils`)
 
       // Fusion intelligente des résultats
       const mergedDevices = this.mergeDeviceResults(psDevices, pyDevices)
 
-      this.logger.log(`[HYBRID] Fusion: ${mergedDevices.length} appareils uniques`)
+      this.enhancedLogger.log(`[HYBRID] Fusion: ${mergedDevices.length} appareils uniques`)
 
       return mergedDevices
     } catch (error) {
-      this.logger.error(`[ENHANCED] Erreur scan hybride: ${error.message}`)
+      this.enhancedLogger.error(`[ENHANCED] Erreur scan hybride: ${error.message}`)
       throw error
     }
   }
@@ -331,7 +334,7 @@ export class EnhancedNetworkService extends NetworkService {
             },
           }
         } catch (error) {
-          this.logger.warn(`[ENRICH] Erreur enrichissement ${device.ipAddress}: ${error.message}`)
+          this.enhancedLogger.warn(`[ENRICH] Erreur enrichissement ${device.ipAddress}: ${error.message}`)
           return device
         }
       }),
@@ -373,7 +376,7 @@ export class EnhancedNetworkService extends NetworkService {
         lastSecurityScan: new Date(),
       }
     } catch (error) {
-      this.logger.error(`[SECURITY] Erreur analyse sécurité: ${error.message}`)
+      this.enhancedLogger.error(`[SECURITY] Erreur analyse sécurité: ${error.message}`)
       return {
         securityScore: 0,
         vulnerabilities: ["Erreur analyse sécurité"],
@@ -477,7 +480,7 @@ export class EnhancedNetworkService extends NetworkService {
         stats,
       }
     } catch (error) {
-      this.logger.error(`[TOPOLOGY] Erreur génération topologie: ${error.message}`)
+      this.enhancedLogger.error(`[TOPOLOGY] Erreur génération topologie: ${error.message}`)
       throw error
     }
   }

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common"
-import type { NmapAgentService } from "./agents/nmap.service"
-import type { TracerouteAgentService } from "./agents/traceroute.service"
-import type { NetstatAgentService } from "./agents/netstat.service"
+import { NmapAgentService } from "./agents/nmap.service"
+import { TracerouteAgentService } from "./agents/traceroute.service"
+import { NetstatAgentService } from "./agents/netstat.service"
 import type { Device, NmapScanConfig, NmapScanResult } from "./device.model"
 import type { NetworkTopologyData } from "./network.types"
 

@@ -32,6 +32,9 @@ import {
   CAlert,
   CProgress,
   CProgressBar,
+  CToast,
+  CToastBody,
+  CToaster,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { 
@@ -45,7 +48,7 @@ import {
   cilCheckCircle,
   cilXCircle,
 } from '@coreui/icons'
-import { API_CONFIG } from '../../config/api.config'
+import { API_CONFIG, buildApiUrl } from '../../config/api.config'
 import { io } from "socket.io-client"
 
 // Configuration de l'URL de base de l'API
@@ -70,6 +73,8 @@ const Devices = () => {
   const [socket, setSocket] = useState(null)
   const [showConfetti, setShowConfetti] = useState(false)
   const confettiRef = useRef(null)
+  const [toast, setToast] = useState({ show: false, message: '', color: 'success' })
+  const toasterRef = useRef()
 
   // Initialisation du token d'authentification
   useEffect(() => {
@@ -117,12 +122,7 @@ const Devices = () => {
       // Configuration du header d'authentification
       authService.setAuthHeader(token)
 
-      console.log('Environnement:', API_CONFIG.ENV)
-      console.log('URL de l\'API:', API_CONFIG.BASE_URL)
-      console.log('Tentative de recuperation des appareils avec le token:', token ? 'Present' : 'Manquant')
-
-      const response = await axios.get(API_CONFIG.ROUTES.NETWORK.DEVICES)
-      console.log('Reponse du serveur:', response.data)
+      const response = await axios.get('/api/network/devices')
       
       setDevices(response.data)
       setError(null)
@@ -141,19 +141,40 @@ const Devices = () => {
 
   // Charger les appareils au montage et verifier l'authentification
   useEffect(() => {
-    const token = authService.getToken()
-    if (!token) {
-      console.log('Pas de token trouve, redirection vers la page de connexion')
-      window.location.href = '/login'
-      return
+    const initializeAuth = async () => {
+      try {
+        const token = authService.getToken()
+        if (!token) {
+          console.log('Pas de token trouve, redirection vers la page de connexion')
+          window.location.href = '/login'
+          return
+        }
+        
+        // Configuration du header d'authentification
+        authService.setAuthHeader(token)
+        
+        // Vérification que l'utilisateur est bien authentifié
+        const currentUser = authService.getCurrentUser()
+        
+        if (!currentUser || !currentUser.id) {
+          console.log('Utilisateur non valide, redirection vers la page de connexion')
+          authService.logout()
+          window.location.href = '/login'
+          return
+        }
+        
+        // Chargement de la liste des appareils
+        await fetchDevices()
+      } catch (error) {
+        console.error('Erreur lors de l\'initialisation:', error)
+        if (error.message.includes('401') || error.message.includes('non autorise')) {
+          authService.logout()
+          window.location.href = '/login'
+        }
+      }
     }
     
-    // Configuration du header d'authentification
-    authService.setAuthHeader(token)
-    console.log('Token configure, headers:', axios.defaults.headers.common)
-    
-    // Chargement uniquement de la liste des appareils
-    fetchDevices()
+    initializeAuth()
   }, [])
 
   // Gestion du formulaire
@@ -171,29 +192,26 @@ const Devices = () => {
       if (!token) {
         throw new Error('Non authentifie')
       }
-      const headers = {
-        'Authorization': `Bearer ${token}`
-      }
+      
+      // Configuration du header d'authentification
+      authService.setAuthHeader(token)
+      
       if (selectedDevice) {
-        await axios.put(`/api/network/devices/${selectedDevice.id}`, formData, { headers })
+        await axios.put(`/api/network/devices/${selectedDevice.id}`, formData)
       } else {
-        await axios.post('/api/network/devices', formData, { headers })
+        await axios.post('/api/network/devices', formData)
       }
+      
       await fetchDevices()
-      setVisible(false)
-      setSelectedDevice(null)
-      setFormData({
-        hostname: '',
-        ipAddress: '',
-        macAddress: '',
-        os: '',
-        deviceType: '',
-      })
-      // Feedback visuel ajout/modif
-      setShowConfetti(true)
-      setTimeout(() => setShowConfetti(false), 2000)
+      resetForm()
     } catch (err) {
-      setError('Erreur lors de l\'enregistrement: ' + (err.response?.data?.message || err.message))
+      console.error('Erreur lors de l\'ajout/modification:', err)
+      if (err.response?.status === 401) {
+        authService.logout()
+        window.location.href = '/login'
+      } else {
+        setError('Erreur lors de l\'ajout/modification: ' + (err.response?.data?.message || err.message))
+      }
     } finally {
       setLoading(false)
     }
@@ -201,120 +219,142 @@ const Devices = () => {
 
   // Fonction pour supprimer un appareil
   const handleDelete = async (deviceId) => {
-    if (window.confirm('Etes-vous sur de vouloir supprimer cet appareil ?')) {
-      try {
-        setLoading(true)
-        const token = authService.getToken()
-        if (!token) {
-          throw new Error('Non authentifie')
-        }
-        await axios.delete(`/api/network/devices/${deviceId}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        })
-        await fetchDevices()
-        // Feedback visuel suppression
-        setShowConfetti(true)
-        setTimeout(() => setShowConfetti(false), 1200)
-      } catch (err) {
-        setError('Erreur lors de la suppression: ' + (err.response?.data?.message || err.message))
-      } finally {
-        setLoading(false)
-      }
+    if (!window.confirm('Êtes-vous sûr de vouloir supprimer cet appareil ?')) {
+      return
     }
-  }
-
-  const handleEdit = (device) => {
-    setSelectedDevice(device)
-    setFormData({
-      hostname: device.hostname,
-      ipAddress: device.ipAddress,
-      macAddress: device.macAddress,
-      os: device.os,
-      deviceType: device.deviceType,
-    })
-    setVisible(true)
-  }
-
-  // Fonction pour rafraîchir uniquement la liste des appareils
-  const handleRefresh = async () => {
+    
     try {
       setLoading(true)
-      setError(null)
       const token = authService.getToken()
       if (!token) {
-        window.location.href = '/login'
-        return
+        throw new Error('Non authentifie')
       }
       
-      console.log('Recuperation de la liste des appareils...')
+      // Configuration du header d'authentification
+      authService.setAuthHeader(token)
+      
+      await axios.delete(`/api/network/devices/${deviceId}`)
       await fetchDevices()
-      console.log('Liste des appareils mise a jour')
     } catch (err) {
-      console.error('Erreur lors du rafraichissement:', err)
-      setError('Erreur lors du rafraichissement de la liste: ' + err.message)
+      console.error('Erreur lors de la suppression:', err)
+      if (err.response?.status === 401) {
+        authService.logout()
+        window.location.href = '/login'
+      } else {
+        setError('Erreur lors de la suppression: ' + (err.response?.data?.message || err.message))
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  // Fonction de scan manuel uniquement via le bouton
+  // Fonction pour éditer un appareil
+  const handleEdit = (device) => {
+    setSelectedDevice(device)
+    setFormData({
+      hostname: device.hostname || '',
+      ipAddress: device.ipAddress || '',
+      macAddress: device.macAddress || '',
+      os: device.os || '',
+      deviceType: device.deviceType || '',
+    })
+    setVisible(true)
+  }
+
+  // Fonction pour rafraîchir la liste
+  const handleRefresh = async () => {
+    await fetchDevices()
+  }
+
+  // Fonction de test d'authentification
+  const testAuth = async () => {
+    try {
+      const response = await axios.get('/api/network/test-auth')
+      if (response.data.success) {
+        console.log('[FRONTEND] Authentification valide:', response.data.user)
+        return true
+      } else {
+        console.error('[FRONTEND] Token invalide:', response.data.message)
+        setError('Token invalide: ' + response.data.message)
+        return false
+      }
+    } catch (err) {
+      console.error('[FRONTEND] Erreur test auth:', err.message)
+      setError('Erreur lors du test d\'authentification: ' + err.message)
+      return false
+    }
+  }
+
+  // Fonction de scan complet intégrée (nmap + routeur + topologie + statistiques)
   const handleScan = async () => {
     try {
       setLoading(true)
       setError(null)
-      const token = authService.getToken()
-      if (!token) {
-        window.location.href = '/login'
+      setToast({ show: false, message: '', color: 'success' })
+      
+      // Test d'authentification avant le scan
+      const authValid = await testAuth()
+      if (!authValid) {
+        setLoading(false)
         return
       }
 
-      // Detection automatique du reseau
-      console.log('[FRONTEND] Demarrage de la detection du reseau...')
-      const networkResponse = await axios.get(API_CONFIG.ROUTES.NETWORK.DETECT)
-      console.log('[FRONTEND] Reponse detection reseau:', networkResponse.data)
+      console.log('[FRONTEND] Démarrage du scan complet intégré...')
+      
+      // 1. Détection automatique du réseau
+      console.log('[FRONTEND] Détection du réseau...')
+      const networkResponse = await axios.get('/api/network/detect')
       
       if (!networkResponse.data || !networkResponse.data.network) {
-        throw new Error('Impossible de detecter le reseau automatiquement')
+        throw new Error('Impossible de détecter le réseau automatiquement')
       }
 
       const { startIP, endIP } = networkResponse.data.network
-      console.log('[FRONTEND] Reseau detecte:', { startIP, endIP })
+      console.log('[FRONTEND] Réseau détecté:', `${startIP}-${endIP}`)
 
-      // Lancement du scan
-      console.log('[FRONTEND] Demarrage du scan reseau avec la plage:', `${startIP}-${endIP}`)
-      const scanResponse = await axios.post(API_CONFIG.ROUTES.NETWORK.SCAN, 
-        { 
-          target: `${startIP}-${endIP}`,
-          quick: true
-        },
-        { 
-          timeout: 300000,
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        }
-      )
-      console.log('[FRONTEND] Reponse du scan:', scanResponse.data)
+      // 2. Scan complet (routeur + nmap)
+      console.log('[FRONTEND] Démarrage du scan complet...')
+      const comprehensiveResponse = await axios.get('/api/network/comprehensive-scan', {
+        timeout: 300000
+      })
       
-      // Mise a jour de la liste apres le scan
+      if (!comprehensiveResponse.data.success) {
+        throw new Error(comprehensiveResponse.data.message || 'Erreur lors du scan complet')
+      }
+
+      console.log('[FRONTEND] Scan complet terminé:', comprehensiveResponse.data.count, 'appareils trouvés')
+
+      // 3. Récupération de la topologie
+      console.log('[FRONTEND] Récupération de la topologie...')
+      const topologyResponse = await axios.get('/api/network/topology')
+      
+      if (topologyResponse.data.success) {
+        console.log('[FRONTEND] Topologie récupérée avec succès')
+      }
+
+      // 4. Mise à jour de la liste des appareils
       await fetchDevices()
-      console.log('[FRONTEND] Liste des appareils mise a jour avec succes')
+      
+      // 5. Affichage du toast de succès
+      setToast({ show: true, message: `✅ Scan terminé : ${comprehensiveResponse.data.count} appareils détectés !`, color: 'success' })
+      
     } catch (err) {
-      console.error('[FRONTEND] Erreur detaillee du scan:', err)
+      console.error('[FRONTEND] Erreur scan complet:', err.message)
       if (err.code === 'ECONNABORTED') {
-        setError('Le scan a pris trop de temps. Veuillez reessayer.')
+        setError('Le scan a pris trop de temps. Veuillez réessayer.')
       } else if (err.response) {
-        console.error('[FRONTEND] Reponse d\'erreur du serveur:', err.response.data)
-        setError(`Erreur lors du scan: ${err.response.data?.message || 'Erreur serveur'}`)
+        if (err.response.status === 401) {
+          authService.logout()
+          window.location.href = '/login'
+        } else {
+          setError(`Erreur lors du scan: ${err.response.data?.message || 'Erreur serveur'}`)
+        }
       } else if (err.request) {
-        console.error('[FRONTEND] Pas de reponse du serveur:', err.request)
-        setError('Le serveur ne repond pas. Verifiez que le backend est en cours d\'execution.')
+        setError('Le serveur ne répond pas. Vérifiez que le backend est en cours d\'exécution.')
       } else {
-        console.error('[FRONTEND] Erreur inconnue:', err.message)
         setError('Erreur lors du scan: ' + err.message)
       }
+      setToast({ show: true, message: '❌ ' + (err.response?.data?.message || err.message), color: 'danger' })
     } finally {
       setLoading(false)
     }
@@ -385,6 +425,7 @@ const Devices = () => {
           ))}
         </div>
       )}
+      
       <CCard className="mb-4">
         <CCardHeader>
           <CRow className="align-items-center">
@@ -406,7 +447,8 @@ const Devices = () => {
                   Ajouter
                 </CButton>
               </CTooltip>
-              <CTooltip content="Scanner tout le reseau (fun garanti)">
+              
+              <CTooltip content="Scan complet intégré (Routeur + Nmap + Topologie + Statistiques)">
                 <CButton 
                   color="success" 
                   onClick={handleScan}
@@ -420,6 +462,7 @@ const Devices = () => {
                   </span>
                 </CButton>
               </CTooltip>
+              
               <CTooltip content="Rafraichir la liste des appareils">
                 <CButton 
                   color="secondary" 
@@ -437,6 +480,7 @@ const Devices = () => {
               </CTooltip>
             </CCol>
           </CRow>
+          
           {/* Barre de progression du scan avec effet degrade */}
           {scanProgress && (
             <CProgress className="mt-3 progress-fun" style={{ height: "22px", background: "#e0e0e0" }} animated>
@@ -446,6 +490,7 @@ const Devices = () => {
             </CProgress>
           )}
         </CCardHeader>
+        
         <CCardBody>
           {error && (
             <CAlert color="danger" dismissible onClose={() => setError(null)}>
@@ -471,15 +516,21 @@ const Devices = () => {
                 <CTableHeaderCell>Type</CTableHeaderCell>
                 <CTableHeaderCell>Adresse IP</CTableHeaderCell>
                 <CTableHeaderCell>MAC</CTableHeaderCell>
-                <CTableHeaderCell>Systeme</CTableHeaderCell>
+                <CTableHeaderCell>Système</CTableHeaderCell>
                 <CTableHeaderCell>Statut</CTableHeaderCell>
-                <CTableHeaderCell>Derniere vue</CTableHeaderCell>
+                <CTableHeaderCell>Dernière vue</CTableHeaderCell>
+                <CTableHeaderCell>Méthode</CTableHeaderCell>
                 <CTableHeaderCell>Actions</CTableHeaderCell>
               </CTableRow>
             </CTableHead>
             <CTableBody>
               {filteredDevices.map((device, idx) => {
                 const status = getDeviceStatus(device.lastSeen)
+                const method = (device.sources && device.sources.length > 0) ? device.sources.join(", ") : "inconnu"
+                let methodColor = "secondary"
+                if (method.includes("nmap")) methodColor = "info"
+                if (method.includes("router")) methodColor = "success"
+                if (method.includes("arp")) methodColor = "warning"
                 return (
                   <CTableRow key={device.id} style={{ animation: `fadeIn .7s ${0.1*idx}s both` }}>
                     <CTableDataCell>
@@ -504,25 +555,26 @@ const Devices = () => {
                     </CTableDataCell>
                     <CTableDataCell>{new Date(device.lastSeen).toLocaleString()}</CTableDataCell>
                     <CTableDataCell>
+                      <CBadge color={methodColor} style={{ fontSize: 13, padding: '4px 10px' }}>{method}</CBadge>
+                    </CTableDataCell>
+                    <CTableDataCell>
                       <CTooltip content="Editer cet appareil">
                         <CButton 
                           color="primary" 
                           variant="ghost" 
                           size="sm" 
-                          className="me-2"
                           onClick={() => handleEdit(device)}
-                          style={{ borderRadius: 12 }}
+                          className="me-2"
                         >
                           <CIcon icon={cilPencil} />
                         </CButton>
                       </CTooltip>
-                      <CTooltip content="Supprimer cet appareil (attention)">
+                      <CTooltip content="Supprimer cet appareil">
                         <CButton 
                           color="danger" 
                           variant="ghost" 
-                          size="sm"
+                          size="sm" 
                           onClick={() => handleDelete(device.id)}
-                          style={{ borderRadius: 12 }}
                         >
                           <CIcon icon={cilTrash} />
                         </CButton>
@@ -533,18 +585,21 @@ const Devices = () => {
               })}
             </CTableBody>
           </CTable>
+
+          {/* Affichage d'un message d'avertissement si une méthode de scan échoue */}
+          {error && error.toLowerCase().includes('snmpwalk') && (
+            <CAlert color="warning" dismissible onClose={() => setError(null)}>
+              ⚠️ SNMP non disponible : certaines méthodes de détection sont incomplètes. Installez snmpwalk pour une détection optimale.
+            </CAlert>
+          )}
         </CCardBody>
       </CCard>
 
-      {/* Modal d'ajout/modification d'appareil */}
-      <CModal 
-        visible={visible} 
-        onClose={resetForm}
-        size="lg"
-      >
+      {/* Modal pour ajouter/modifier un appareil */}
+      <CModal visible={visible} onClose={resetForm} size="lg">
         <CModalHeader>
           <CModalTitle>
-            {selectedDevice ? 'Modifier un appareil' : 'Ajouter un appareil'}
+            {selectedDevice ? 'Modifier l\'appareil' : 'Ajouter un appareil'}
           </CModalTitle>
         </CModalHeader>
         <CModalBody>
@@ -554,70 +609,70 @@ const Devices = () => {
                 <div className="mb-3">
                   <CFormLabel>Hostname</CFormLabel>
                   <CFormInput
-                    type="text"
                     name="hostname"
                     value={formData.hostname}
                     onChange={handleInputChange}
+                    placeholder="Nom de l'appareil"
                     required
                   />
                 </div>
               </CCol>
               <CCol md={6}>
                 <div className="mb-3">
-                  <CFormLabel>Type d'appareil</CFormLabel>
-                  <CFormSelect
-                    name="deviceType"
-                    value={formData.deviceType}
+                  <CFormLabel>Adresse IP</CFormLabel>
+                  <CFormInput
+                    name="ipAddress"
+                    value={formData.ipAddress}
                     onChange={handleInputChange}
+                    placeholder="192.168.1.100"
                     required
-                  >
-                    <option value="">Sélectionnez un type</option>
-                    <option value="Router">Router</option>
-                    <option value="Switch">Switch</option>
-                    <option value="Access Point">Access Point</option>
-                    <option value="Firewall">Firewall</option>
-                    <option value="Serveur">Serveur</option>
-                  </CFormSelect>
+                  />
                 </div>
               </CCol>
             </CRow>
             <CRow>
               <CCol md={6}>
                 <div className="mb-3">
-                  <CFormLabel>Adresse IP</CFormLabel>
+                  <CFormLabel>Adresse MAC</CFormLabel>
                   <CFormInput
-                    type="text"
-                    name="ipAddress"
-                    value={formData.ipAddress}
+                    name="macAddress"
+                    value={formData.macAddress}
                     onChange={handleInputChange}
-                    pattern="^(\d{1,3}\.){3}\d{1,3}$"
-                    required
+                    placeholder="00:11:22:33:44:55"
                   />
                 </div>
               </CCol>
               <CCol md={6}>
                 <div className="mb-3">
-                  <CFormLabel>Adresse MAC</CFormLabel>
+                  <CFormLabel>Système d'exploitation</CFormLabel>
                   <CFormInput
-                    type="text"
-                    name="macAddress"
-                    value={formData.macAddress}
+                    name="os"
+                    value={formData.os}
                     onChange={handleInputChange}
-                    pattern="^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"
-                    required
+                    placeholder="Windows 10, Linux, etc."
                   />
                 </div>
               </CCol>
             </CRow>
             <div className="mb-3">
-              <CFormLabel>Système d'exploitation</CFormLabel>
-              <CFormInput
-                type="text"
-                name="os"
-                value={formData.os}
+              <CFormLabel>Type d'appareil</CFormLabel>
+              <CFormSelect
+                name="deviceType"
+                value={formData.deviceType}
                 onChange={handleInputChange}
-                required
-              />
+              >
+                <option value="">Sélectionner un type</option>
+                <option value="DESKTOP">Ordinateur de bureau</option>
+                <option value="LAPTOP">Ordinateur portable</option>
+                <option value="MOBILE">Mobile</option>
+                <option value="SERVER">Serveur</option>
+                <option value="ROUTER">Routeur</option>
+                <option value="SWITCH">Switch</option>
+                <option value="AP">Point d'accès</option>
+                <option value="PRINTER">Imprimante</option>
+                <option value="CAMERA">Caméra</option>
+                <option value="OTHER">Autre</option>
+              </CFormSelect>
             </div>
           </CForm>
         </CModalBody>
@@ -625,66 +680,50 @@ const Devices = () => {
           <CButton color="secondary" onClick={resetForm}>
             Annuler
           </CButton>
-          <CButton color="primary" onClick={handleSubmit}>
-            {selectedDevice ? 'Modifier' : 'Ajouter'}
+          <CButton color="primary" onClick={handleSubmit} disabled={loading}>
+            {loading ? <CSpinner size="sm" /> : (selectedDevice ? 'Modifier' : 'Ajouter')}
           </CButton>
         </CModalFooter>
       </CModal>
 
-      {/* Ajout du style pour l'animation de l'icone scan, confettis, fadeIn, radar, ripple */}
-      <style>{`
-      .spin {
-        animation: spin 1s linear infinite;
-      }
-      @keyframes spin {
-        100% { transform: rotate(360deg); }
-      }
-      .radar-anim {
-        animation: radarPulse 1.2s infinite cubic-bezier(.4,0,.2,1);
-        filter: drop-shadow(0 0 8px #4be04b);
-      }
-      @keyframes radarPulse {
-        0% { transform: scale(1); opacity: 1; }
-        70% { transform: scale(1.18); opacity: 0.7; }
-        100% { transform: scale(1); opacity: 1; }
-      }
-      .scan-radar-btn .ripple {
-        position: absolute;
-        left: 50%; top: 50%;
-        width: 120%; height: 120%;
-        background: radial-gradient(circle,#4be04b55 0%,transparent 70%);
-        transform: translate(-50%,-50%);
-        pointer-events: none;
-        animation: rippleAnim 1.2s infinite linear;
-        opacity: 0.7;
-      }
-      @keyframes rippleAnim {
-        0% { opacity: 0.7; transform: translate(-50%,-50%) scale(1); }
-        80% { opacity: 0.1; transform: translate(-50%,-50%) scale(1.25); }
-        100% { opacity: 0; transform: translate(-50%,-50%) scale(1.4); }
-      }
-      @keyframes confetti-fall {
-        0% { opacity: 0; transform: translateY(-40px) scale(0.7); }
-        30% { opacity: 1; }
-        100% { opacity: 0; transform: translateY(100vh) scale(1.2); }
-      }
-      @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(20px); }
-        to { opacity: 1; transform: none; }
-      }
-      .fun-table tbody tr {
-        transition: box-shadow 0.2s;
-      }
-      .fun-table tbody tr:hover {
-        box-shadow: 0 2px 16px #00cfff22;
-        background: #f8fcff;
-      }
-      .progress-fun .progress-bar {
-        font-weight: bold;
-        letter-spacing: 1px;
-        text-shadow: 0 1px 2px #fff;
-      }
+      {/* Styles CSS pour les animations */}
+      <style jsx>{`
+        @keyframes confetti-fall {
+          0% {
+            transform: translateY(-100vh) rotate(0deg);
+            opacity: 0.7;
+          }
+          100% {
+            transform: translateY(100vh) rotate(720deg);
+            opacity: 0;
+          }
+        }
+        
+        @keyframes radar-anim {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        
+        .scan-radar-btn:hover .radar-icon {
+          animation: radar-anim 2s linear infinite;
+        }
+        
+        .progress-fun {
+          border-radius: 15px;
+          overflow: hidden;
+        }
+        
+        .fun-table {
+          border-radius: 10px;
+          overflow: hidden;
+        }
+        
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
+
     </>
   )
 }

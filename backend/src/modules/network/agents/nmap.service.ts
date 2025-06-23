@@ -62,9 +62,8 @@ export class NmapAgentService {
       }
 
       // 1. Scan rapide du reseau local uniquement
-      const localNetwork = this.getLocalNetwork()
-      await this.logAction(actionId, userId, "network_scan", `Scan du réseau ${localNetwork}`)
-      const nmapDevices = await this.executeQuickScan(localNetwork)
+      await this.logAction(actionId, userId, "network_scan", `Scan du réseau ${config.target}`)
+      const nmapDevices = await this.executeQuickScan(config.target)
       this.logger.log(`[SCAN] Appareils trouves: ${nmapDevices.length}`)
 
       // 2. Enrichissement des informations de base
@@ -118,6 +117,12 @@ export class NmapAgentService {
         return
       }
 
+      // Pour les scans automatiques, on ne log pas dans l'historique
+      if (userId === "system-auto-scan") {
+        this.logger.debug(`[HISTORIQUE] Scan automatique, action non loggee: ${action}`)
+        return
+      }
+
       // Enregistrement uniquement des actions utilisateur dans l'historique
       if (action.startsWith("network_scan") || action === "device_stats_collected") {
         await sequelize.query(
@@ -168,32 +173,183 @@ export class NmapAgentService {
     }
   }
 
-  private getLocalNetwork(): string {
-    const interfaces = os.networkInterfaces()
-    for (const name of Object.keys(interfaces)) {
-      for (const iface of interfaces[name] || []) {
-        if (iface.family === "IPv4" && !iface.internal) {
-          // Retourne le sous-reseau /24
-          const ipParts = iface.address.split(".")
-          return `${ipParts[0]}.${ipParts[1]}.${ipParts[2]}.0/24`
-        }
-      }
-    }
-    return "127.0.0.1/24"
-  }
-
   private async executeQuickScan(network: string): Promise<Device[]> {
     try {
-      // Commande nmap optimisee pour un scan rapide
+      this.logger.log(`[SCAN] Démarrage scan du réseau: ${network}`)
+      
+      // Commande nmap améliorée pour Windows - scan plus agressif
       const isWindows = os.platform() === "win32"
-      const nmapCommand = isWindows
-        ? `nmap -sn --send-eth -T4 --max-retries 1 --host-timeout 5s ${network}`
-        : `nmap -sn -T4 --max-retries 1 --host-timeout 5s ${network}`
+      let nmapCommand: string
+      
+      if (isWindows) {
+        // Commande Windows optimisée - scan plus agressif
+        nmapCommand = `nmap -sn -PE -PP -PS21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -PA21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T4 --max-retries 3 --host-timeout 15s ${network}`
+      } else {
+        // Commande Linux/Mac - scan plus agressif
+        nmapCommand = `nmap -sn -PE -PP -PS21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -PA21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T4 --max-retries 3 --host-timeout 15s ${network}`
+      }
 
-      const { stdout } = await execAsync(nmapCommand)
-      return this.parseNmapOutput(stdout)
+      this.logger.log(`[SCAN] Commande nmap: ${nmapCommand}`)
+      
+      const { stdout, stderr } = await execAsync(nmapCommand)
+      
+      this.logger.log(`[SCAN] Sortie nmap (${stdout.length} caractères):`)
+      this.logger.log(`[SCAN] ${stdout.substring(0, 500)}...`)
+      
+      if (stderr) {
+        this.logger.warn(`[SCAN] Stderr nmap: ${stderr}`)
+      }
+      
+      let devices = this.parseNmapOutput(stdout)
+      this.logger.log(`[SCAN] Appareils trouvés après scan ping: ${devices.length}`)
+      
+      // Si peu d'appareils trouvés, essayer un scan de ports
+      if (devices.length <= 1) {
+        this.logger.log(`[SCAN] Peu d'appareils trouvés, tentative de scan de ports...`)
+        const portScanDevices = await this.executePortScan(network)
+        this.logger.log(`[SCAN] Appareils trouvés après scan de ports: ${portScanDevices.length}`)
+        
+        // Fusionner les résultats en évitant les doublons
+        const allDevices = [...devices]
+        for (const portDevice of portScanDevices) {
+          if (!allDevices.find(d => d.ipAddress === portDevice.ipAddress)) {
+            allDevices.push(portDevice)
+          }
+        }
+        devices = allDevices
+      }
+      
+      // Si toujours peu d'appareils, essayer un scan ARP
+      if (devices.length <= 1) {
+        this.logger.log(`[SCAN] Peu d'appareils trouvés, tentative de scan ARP...`)
+        const arpDevices = await this.executeArpScan(network)
+        this.logger.log(`[SCAN] Appareils trouvés après scan ARP: ${arpDevices.length}`)
+        
+        // Fusionner les résultats en évitant les doublons
+        const allDevices = [...devices]
+        for (const arpDevice of arpDevices) {
+          if (!allDevices.find(d => d.ipAddress === arpDevice.ipAddress)) {
+            allDevices.push(arpDevice)
+          }
+        }
+        devices = allDevices
+      }
+      
+      this.logger.log(`[SCAN] Total appareils trouvés: ${devices.length}`)
+      return devices
     } catch (error) {
       this.logger.error(`[SCAN] Erreur scan nmap: ${error.message}`)
+      this.logger.error(`[SCAN] Commande qui a échoué: nmap -sn -PE -PP -PS21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -PA21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T4 --max-retries 3 --host-timeout 15s ${network}`)
+      return []
+    }
+  }
+
+  private async executePortScan(network: string): Promise<Device[]> {
+    try {
+      this.logger.log(`[SCAN] Démarrage scan de ports du réseau: ${network}`)
+      
+      // Scan de ports rapide sur les ports les plus courants
+      const isWindows = os.platform() === "win32"
+      const nmapCommand = isWindows
+        ? `nmap -sS -p 21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T4 --max-retries 2 --host-timeout 10s ${network}`
+        : `nmap -sS -p 21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T4 --max-retries 2 --host-timeout 10s ${network}`
+
+      this.logger.log(`[SCAN] Commande scan de ports: ${nmapCommand}`)
+      
+      const { stdout, stderr } = await execAsync(nmapCommand)
+      
+      if (stderr) {
+        this.logger.warn(`[SCAN] Stderr scan de ports: ${stderr}`)
+      }
+      
+      const devices = this.parseNmapPortScanOutput(stdout)
+      this.logger.log(`[SCAN] Appareils trouvés par scan de ports: ${devices.length}`)
+      
+      return devices
+    } catch (error) {
+      this.logger.error(`[SCAN] Erreur scan de ports: ${error.message}`)
+      return []
+    }
+  }
+
+  private async executeArpScan(network: string): Promise<Device[]> {
+    try {
+      this.logger.log(`[SCAN] Démarrage scan ARP du réseau: ${network}`)
+      
+      const isWindows = os.platform() === "win32"
+      const devices: Device[] = []
+      
+      // Extraire la plage d'IPs du réseau
+      const networkParts = network.split('.')
+      const baseIP = networkParts.slice(0, 3).join('.')
+      
+      // Scanner les IPs de 1 à 254
+      for (let i = 1; i <= 254; i++) {
+        const ip = `${baseIP}.${i}`
+        
+        try {
+          if (isWindows) {
+            // Windows: utiliser arp -a
+            const { stdout } = await execAsync(`arp -a ${ip}`)
+            const macMatch = stdout.match(/([0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2})/i)
+            
+            if (macMatch && !this.isLocalhost(ip)) {
+              this.logger.log(`[SCAN] Appareil trouvé par ARP: ${ip} (MAC: ${macMatch[1]})`)
+              devices.push({
+                id: uuidv4(),
+                hostname: ip,
+                ipAddress: ip,
+                macAddress: macMatch[1].replace(/-/g, ":"),
+                os: "Unknown",
+                deviceType: DeviceType.OTHER,
+                stats: {
+                  cpu: 0,
+                  memory: 0,
+                  uptime: "0",
+                  status: DeviceStatus.ACTIVE,
+                  services: [],
+                },
+                lastSeen: new Date(),
+                firstDiscovered: new Date(),
+              })
+            }
+          } else {
+            // Linux/Mac: utiliser ping + arp
+            await execAsync(`ping -c 1 -W 1 ${ip}`)
+            const { stdout } = await execAsync(`arp -n ${ip}`)
+            const macMatch = stdout.match(/([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})/i)
+            
+            if (macMatch && !this.isLocalhost(ip)) {
+              this.logger.log(`[SCAN] Appareil trouvé par ARP: ${ip} (MAC: ${macMatch[1]})`)
+              devices.push({
+                id: uuidv4(),
+                hostname: ip,
+                ipAddress: ip,
+                macAddress: macMatch[1],
+                os: "Unknown",
+                deviceType: DeviceType.OTHER,
+                stats: {
+                  cpu: 0,
+                  memory: 0,
+                  uptime: "0",
+                  status: DeviceStatus.ACTIVE,
+                  services: [],
+                },
+                lastSeen: new Date(),
+                firstDiscovered: new Date(),
+              })
+            }
+          }
+        } catch (error) {
+          // Ignorer les erreurs pour les IPs non répondues
+          continue
+        }
+      }
+      
+      this.logger.log(`[SCAN] Appareils trouvés par scan ARP: ${devices.length}`)
+      return devices
+    } catch (error) {
+      this.logger.error(`[SCAN] Erreur scan ARP: ${error.message}`)
       return []
     }
   }
@@ -293,14 +449,39 @@ export class NmapAgentService {
   private parseNmapOutput(stdout: string): Device[] {
     const devices: Device[] = []
     const lines = stdout.split("\n")
+    
+    this.logger.log(`[SCAN] Parsing de ${lines.length} lignes de sortie nmap`)
 
     for (const line of lines) {
+      // Recherche d'IPs avec différents patterns
       const ipMatch = line.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/)
-      if (ipMatch && !this.isLocalhost(ipMatch[1])) {
+      
+      if (ipMatch) {
+        const ip = ipMatch[1]
+        
+        // Vérification que ce n'est pas localhost
+        if (!this.isLocalhost(ip)) {
+          this.logger.log(`[SCAN] IP trouvée: ${ip}`)
+          
+          // Recherche d'informations supplémentaires dans la ligne
+          let hostname = ip
+          let status = "up"
+          
+          // Extraction du hostname si présent
+          const hostnameMatch = line.match(/\(([^)]+)\)/)
+          if (hostnameMatch) {
+            hostname = hostnameMatch[1]
+          }
+          
+          // Vérification du statut
+          if (line.toLowerCase().includes("down") || line.toLowerCase().includes("filtered")) {
+            status = "down"
+          }
+          
         devices.push({
           id: uuidv4(),
-          hostname: ipMatch[1],
-          ipAddress: ipMatch[1],
+            hostname: hostname,
+            ipAddress: ip,
           macAddress: "",
           os: "Unknown",
           deviceType: DeviceType.OTHER,
@@ -308,15 +489,17 @@ export class NmapAgentService {
             cpu: 0,
             memory: 0,
             uptime: "0",
-            status: DeviceStatus.ACTIVE,
+              status: status === "up" ? DeviceStatus.ACTIVE : DeviceStatus.INACTIVE,
             services: [],
           },
           lastSeen: new Date(),
           firstDiscovered: new Date(),
         })
+        }
       }
     }
 
+    this.logger.log(`[SCAN] Total appareils parsés: ${devices.length}`)
     return devices
   }
 
@@ -336,7 +519,7 @@ export class NmapAgentService {
     return "127.0.0.1"
   }
 
-  private async collectNetworkStatsWithSNMP(ip: string): Promise<NetworkStats> {
+  public async collectNetworkStatsWithSNMP(ip: string): Promise<NetworkStats> {
     try {
       // Tentative de collecte SNMP
       const session = snmp.createSession(ip, this.snmpConfig.community, {
@@ -352,18 +535,25 @@ export class NmapAgentService {
         "1.3.6.1.2.1.2.2.1.16.1", // Interface out octets
       ]
 
-      return new Promise(async (resolve, reject) => {
+      return new Promise(async (resolve) => {
         session.get(oids, async (error, varbinds) => {
           session.close()
 
           if (error) {
             // Fallback sur ping si SNMP echoue
-            this.logger.warn(`[SNMP] Erreur pour ${ip}, utilisation ping: ${error.message}`)
+            this.logger.log(`[SNMP] SNMP indisponible pour ${ip}, fallback ping utilisé: ${error.message}`)
             try {
               const stats = await this.collectNetworkStats(ip)
               resolve(stats)
             } catch (err) {
-              reject(err)
+              this.logger.log(`[SNMP] Fallback ping aussi indisponible pour ${ip}: ${err.message}`)
+              resolve({
+                bandwidth: 0,
+                latency: 0,
+                packetLoss: 100,
+                cpuUsage: 0,
+                memoryUsage: 0,
+              })
             }
             return
           }
@@ -386,9 +576,20 @@ export class NmapAgentService {
         })
       })
     } catch (error) {
-      this.logger.error(`[SNMP] Erreur session ${ip}: ${error.message}`)
+      this.logger.log(`[SNMP] Exception SNMP pour ${ip}, fallback ping utilisé: ${error.message}`)
       // Fallback sur la methode ping
-      return this.collectNetworkStats(ip)
+      try {
+        return await this.collectNetworkStats(ip)
+      } catch (err) {
+        this.logger.log(`[SNMP] Fallback ping aussi indisponible pour ${ip}: ${err.message}`)
+        return {
+          bandwidth: 0,
+          latency: 0,
+          packetLoss: 100,
+          cpuUsage: 0,
+          memoryUsage: 0,
+        }
+      }
     }
   }
 
@@ -424,7 +625,7 @@ export class NmapAgentService {
     }
   }
 
-  private async saveNetworkStats(deviceId: string, stats: NetworkStats): Promise<void> {
+  public async saveNetworkStats(deviceId: string, stats: NetworkStats): Promise<void> {
     try {
       await sequelize.query(
         `INSERT INTO statistiques_reseau (
@@ -482,9 +683,8 @@ export class NmapAgentService {
     }
   }
 
-  private async saveScanLogs(device: Device): Promise<void> {
+  public async saveScanLogs(device: Device): Promise<void> {
     try {
-      // Enregistrement des logs techniques dans journaux
       await sequelize.query(
         `INSERT INTO journaux (
           id, deviceId, port, protocol, timestamp,
@@ -593,5 +793,95 @@ export class NmapAgentService {
       this.logger.error(`[SNMP] Erreur session ressources ${ip}: ${error.message}`)
       return { cpuUsage: 0, memoryUsage: 0 }
     }
+  }
+
+  private parseNmapPortScanOutput(stdout: string): Device[] {
+    const devices: Device[] = []
+    const lines = stdout.split("\n")
+    
+    this.logger.log(`[SCAN] Parsing scan de ports: ${lines.length} lignes`)
+
+    let currentIP = ""
+    let currentHostname = ""
+    let currentPorts: string[] = []
+
+    for (const line of lines) {
+      // Recherche d'une nouvelle IP
+      const ipMatch = line.match(/Nmap scan report for ([^\s]+)/)
+      if (ipMatch) {
+        // Sauvegarder l'appareil précédent s'il existe
+        if (currentIP && !this.isLocalhost(currentIP)) {
+          this.logger.log(`[SCAN] Appareil trouvé par scan de ports: ${currentIP} (ports: ${currentPorts.join(', ')})`)
+          devices.push({
+            id: uuidv4(),
+            hostname: currentHostname || currentIP,
+            ipAddress: currentIP,
+            macAddress: "",
+            os: "Unknown",
+            deviceType: DeviceType.OTHER,
+            stats: {
+              cpu: 0,
+              memory: 0,
+              uptime: "0",
+              status: DeviceStatus.ACTIVE,
+              services: currentPorts.map(port => ({ port: parseInt(port), service: "unknown", protocol: "tcp" })),
+            },
+            lastSeen: new Date(),
+            firstDiscovered: new Date(),
+          })
+        }
+        
+        // Nouvelle IP
+        const target = ipMatch[1]
+        if (target.match(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/)) {
+          currentIP = target
+          currentHostname = target
+        } else {
+          // Hostname trouvé, extraire l'IP
+          const ipInLine = line.match(/\((\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\)/)
+          if (ipInLine) {
+            currentIP = ipInLine[1]
+            currentHostname = target
+          }
+        }
+        currentPorts = []
+        continue
+      }
+
+      // Recherche de ports ouverts
+      const portMatch = line.match(/(\d+)\/(\w+)\s+(\w+)/)
+      if (portMatch && currentIP) {
+        const port = portMatch[1]
+        const state = portMatch[3]
+        if (state === "open") {
+          currentPorts.push(port)
+        }
+      }
+    }
+
+    // Sauvegarder le dernier appareil
+    if (currentIP && !this.isLocalhost(currentIP)) {
+      this.logger.log(`[SCAN] Dernier appareil trouvé par scan de ports: ${currentIP} (ports: ${currentPorts.join(', ')})`)
+      devices.push({
+        id: uuidv4(),
+        hostname: currentHostname || currentIP,
+        ipAddress: currentIP,
+        macAddress: "",
+        os: "Unknown",
+        deviceType: DeviceType.OTHER,
+        stats: {
+          cpu: 0,
+          memory: 0,
+          uptime: "0",
+          status: DeviceStatus.ACTIVE,
+          services: currentPorts.map(port => ({ port: parseInt(port), service: "unknown", protocol: "tcp" })),
+        },
+        lastSeen: new Date(),
+        firstDiscovered: new Date(),
+      })
+    }
+
+    this.logger.log(`[SCAN] Total appareils trouvés par scan de ports: ${devices.length}`)
+    return devices
   }
 }
