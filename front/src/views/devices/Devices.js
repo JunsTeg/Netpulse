@@ -441,7 +441,7 @@ const Devices = () => {
                     setVisible(true)
                   }}
                   className="me-2"
-                  style={{ borderRadius: "30px", fontWeight: "bold", boxShadow: "0 0 8px #007bff55" }}
+                  style={{ borderRadius: "30px", fontWeight: "bold", boxShadow: `0 0 8px ${getComputedStyle(document.body).getPropertyValue('--color-primary').trim() || "#3b82f6"}55` }}
                 >
                   <CIcon icon={cilPlus} className="me-2" />
                   Ajouter
@@ -454,7 +454,7 @@ const Devices = () => {
                   onClick={handleScan}
                   disabled={scanButtonDisabled}
                   className="me-2 scan-radar-btn"
-                  style={{ borderRadius: "50%", width: 56, height: 56, boxShadow: scanButtonDisabled ? "none" : "0 0 16px #4be04b99", position: 'relative', overflow: 'hidden' }}
+                  style={{ borderRadius: "50%", width: 56, height: 56, boxShadow: scanButtonDisabled ? "none" : `0 0 16px ${getComputedStyle(document.body).getPropertyValue('--color-success').trim() || "#10b981"}99`, position: 'relative', overflow: 'hidden' }}
                 >
                   <span className="ripple" />
                   <span className="radar-icon">
@@ -483,8 +483,8 @@ const Devices = () => {
           
           {/* Barre de progression du scan avec effet degrade */}
           {scanProgress && (
-            <CProgress className="mt-3 progress-fun" style={{ height: "22px", background: "#e0e0e0" }} animated>
-              <CProgressBar value={scanProgress.progress * 100} style={{ background: "linear-gradient(90deg,#4be04b,#00cfff 80%,#ffb300)", color: '#222', fontWeight: 'bold', fontSize: 18 }}>
+            <CProgress className="mt-3 progress-fun" style={{ height: "22px", background: getComputedStyle(document.body).getPropertyValue('--color-bg-secondary-light').trim() || "#f1f5f9" }} animated>
+              <CProgressBar value={scanProgress.progress * 100} style={{ background: `linear-gradient(90deg,${getComputedStyle(document.body).getPropertyValue('--color-success').trim() || "#10b981"},${getComputedStyle(document.body).getPropertyValue('--color-info').trim() || "#06b6d4"} 80%,${getComputedStyle(document.body).getPropertyValue('--color-warning').trim() || "#f59e0b"})`, color: getComputedStyle(document.body).getPropertyValue('--color-text-light').trim() || "#0f172a", fontWeight: 'bold', fontSize: 18 }}>
                 {Math.round(scanProgress.progress * 100)}% - {scanProgress.currentStep}
               </CProgressBar>
             </CProgress>

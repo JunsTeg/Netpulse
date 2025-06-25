@@ -54,7 +54,16 @@ const NetworkStats = () => {
       const response = await axios.get(`/api/network/devices/${deviceId}/stats`, {
         params: { interval }
       })
-      setStats(response.data)
+      // Fiabilisation : valeurs par défaut si champs absents
+      const safeStats = {
+        cpuUsage: response.data?.cpuUsage ?? 0,
+        memoryUsage: response.data?.memoryUsage ?? 0,
+        latency: response.data?.latency ?? 'Non disponible',
+        packetLoss: response.data?.packetLoss ?? 'Non disponible',
+        bandwidth: response.data?.bandwidth ?? 'Non disponible',
+        timestamp: response.data?.timestamp ?? null,
+      }
+      setStats(safeStats)
       setError(null)
     } catch (err) {
       setError('Erreur lors du chargement des statistiques: ' + err.message)
@@ -155,7 +164,7 @@ const NetworkStats = () => {
               <div className="mb-4">
                 <h6>Utilisation CPU</h6>
                 <CProgress 
-                  value={stats.cpuUsage} 
+                  value={stats.cpuUsage ?? 0} 
                   color={
                     stats.cpuUsage > 80 ? "danger" :
                     stats.cpuUsage > 60 ? "warning" :
@@ -169,7 +178,7 @@ const NetworkStats = () => {
               <div className="mb-4">
                 <h6>Utilisation Mémoire</h6>
                 <CProgress 
-                  value={stats.memoryUsage} 
+                  value={stats.memoryUsage ?? 0} 
                   color={
                     stats.memoryUsage > 80 ? "danger" :
                     stats.memoryUsage > 60 ? "warning" :
@@ -184,7 +193,7 @@ const NetworkStats = () => {
                 <h6>Latence</h6>
                 <div className="d-flex align-items-center">
                   <CIcon icon={cilSpeedometer} className="me-2" />
-                  <span>{stats.latency} ms</span>
+                  <span>{stats.latency}</span>
                 </div>
               </div>
             </CCol>
@@ -193,7 +202,7 @@ const NetworkStats = () => {
                 <h6>Perte de paquets</h6>
                 <div className="d-flex align-items-center">
                   <CIcon icon={cilChart} className="me-2" />
-                  <span>{stats.packetLoss}%</span>
+                  <span>{stats.packetLoss}</span>
                 </div>
               </div>
             </CCol>
@@ -202,7 +211,7 @@ const NetworkStats = () => {
                 <h6>Bande passante</h6>
                 <div className="d-flex align-items-center">
                   <CIcon icon={cilCloudDownload} className="me-2" />
-                  <span>{stats.bandwidth} Mbps</span>
+                  <span>{stats.bandwidth}</span>
                 </div>
               </div>
             </CCol>

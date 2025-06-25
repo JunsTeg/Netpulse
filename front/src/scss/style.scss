@@ -3,11 +3,412 @@
 );
 @use "@coreui/chartjs/scss/coreui-chartjs";
 @use "vendors/simplebar";
-@use "futuristic-theme";
-@use "animations";
+
+// Thème simple avec deux modes : clair et sombre
+:root {
+  // Mode Clair - Palette élégante et sophistiquée
+  --color-bg-light: #fafbfc;                    // Fond principal très subtil
+  --color-bg-secondary-light: #f1f5f9;         // Fond secondaire
+  --color-bg-dark: #000000;
+  --color-text-light: #0f172a;                 // Texte principal plus foncé
+  --color-text-secondary-light: #475569;       // Texte secondaire
+  --color-text-muted-light: #64748b;           // Texte atténué
+  --color-text-dark: #ffffff;
+  --color-primary: #3b82f6;                    // Bleu plus moderne
+  --color-primary-hover: #2563eb;              // Bleu au survol
+  --color-secondary: #64748b;
+  --color-border: #e2e8f0;                     // Bordure subtile
+  --color-border-hover: #cbd5e1;               // Bordure au survol
+  --color-card-light: #ffffff;                 // Cartes blanches
+  --color-card-hover-light: #f8fafc;           // Cartes au survol
+  --color-card-dark: #000000;
+  --color-sidebar-light: #000000;
+  --color-sidebar-dark: #000000;
+  --color-sidebar-text-light: #ffffff;
+  --color-sidebar-text-dark: #ffffff;
+  --color-accent-light: #475569;
+  --color-accent-dark: #ffffff;
+  --color-muted-light: #94a3b8;
+  --color-muted-dark: #a1a1aa;
+  --color-success: #10b981;                    // Vert plus moderne
+  --color-warning: #f59e0b;                    // Orange plus moderne
+  --color-danger: #ef4444;                     // Rouge plus moderne
+  --color-info: #06b6d4;                       // Cyan plus moderne
+  
+  // Ombres et effets
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
 
 body {
-  background-color: var(--cui-tertiary-bg);
+  background-color: var(--color-bg-light);
+  color: var(--color-text-light);
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+  transition: background 0.3s, color 0.3s;
+  line-height: 1.6;
+}
+
+body.dark-mode {
+  background-color: var(--color-bg-dark);
+  color: var(--color-text-dark);
+}
+
+.card {
+  background: var(--color-card-light);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+  border-color: var(--color-border-hover);
+}
+
+body.dark-mode .card {
+  background: var(--color-card-dark);
+  border: 1px solid #1a1a1a;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+}
+
+body.dark-mode .card:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  background: linear-gradient(135deg, var(--color-primary-hover), var(--color-primary));
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+.header, .footer {
+  background: var(--color-card-light);
+  color: var(--color-text-light);
+  border-bottom: 1px solid var(--color-border);
+  transition: background 0.3s, color 0.3s;
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(10px);
+}
+
+body.dark-mode .header, body.dark-mode .footer {
+  background: var(--color-card-dark);
+  color: var(--color-text-dark);
+  border-bottom: 1px solid #1a1a1a;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+}
+
+// Sidebar - Toujours noire dans les deux modes
+.sidebar {
+  background: var(--color-sidebar-light) !important;
+  color: var(--color-sidebar-text-light) !important;
+  border-right: 1px solid #1a1a1a !important;
+  box-shadow: var(--shadow-lg);
+}
+
+body.dark-mode .sidebar {
+  background: var(--color-sidebar-dark) !important;
+  color: var(--color-sidebar-text-dark) !important;
+}
+
+.sidebar .sidebar-brand {
+  background: var(--color-sidebar-light) !important;
+  color: var(--color-sidebar-text-light) !important;
+  border-bottom: 1px solid #1a1a1a !important;
+  padding: 1rem;
+}
+
+body.dark-mode .sidebar .sidebar-brand {
+  background: var(--color-sidebar-dark) !important;
+  color: var(--color-sidebar-text-dark) !important;
+}
+
+.sidebar .sidebar-nav .nav-link {
+  color: var(--color-sidebar-text-light) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 8px;
+  margin: 0.25rem 0.5rem;
+  padding: 0.75rem 1rem;
+  font-weight: 500;
+}
+
+.sidebar .sidebar-nav .nav-link:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: var(--color-sidebar-text-light) !important;
+  transform: translateX(4px);
+}
+
+.sidebar .sidebar-nav .nav-link.active {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover)) !important;
+  color: white !important;
+  box-shadow: var(--shadow-md);
+}
+
+body.dark-mode .sidebar .sidebar-nav .nav-link {
+  color: var(--color-sidebar-text-dark) !important;
+}
+
+body.dark-mode .sidebar .sidebar-nav .nav-link:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: var(--color-sidebar-text-dark) !important;
+}
+
+body.dark-mode .sidebar .sidebar-nav .nav-link.active {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover)) !important;
+  color: white !important;
+}
+
+// Surcharge des variables CoreUI pour utiliser nos variables CSS
+:root {
+  // Variables CoreUI principales
+  --cui-primary: var(--color-primary);
+  --cui-secondary: var(--color-secondary);
+  --cui-success: var(--color-success);
+  --cui-info: var(--color-info);
+  --cui-warning: var(--color-warning);
+  --cui-danger: var(--color-danger);
+  --cui-light: var(--color-bg-secondary-light);
+  --cui-dark: var(--color-text-light);
+  
+  // Variables CoreUI pour les textes
+  --cui-body-color: var(--color-text-light);
+  --cui-body-bg: var(--color-bg-light);
+  --cui-heading-color: var(--color-text-light);
+  
+  // Variables CoreUI pour les cartes
+  --cui-card-bg: var(--color-card-light);
+  --cui-card-border-color: var(--color-border);
+  --cui-card-cap-bg: var(--color-bg-secondary-light);
+  
+  // Variables CoreUI pour les bordures
+  --cui-border-color: var(--color-border);
+  --cui-border-color-translucent: var(--color-border);
+  
+  // Variables CoreUI pour les inputs
+  --cui-input-bg: var(--color-card-light);
+  --cui-input-border-color: var(--color-border);
+  --cui-input-color: var(--color-text-light);
+  
+  // Variables CoreUI pour les boutons
+  --cui-btn-bg: var(--color-primary);
+  --cui-btn-border-color: var(--color-primary);
+  --cui-btn-color: white;
+  
+  // Variables CoreUI pour les tableaux
+  --cui-table-bg: var(--color-card-light);
+  --cui-table-border-color: var(--color-border);
+  --cui-table-striped-bg: var(--color-bg-secondary-light);
+  --cui-table-hover-bg: var(--color-bg-secondary-light);
+  
+  // Variables CoreUI pour les listes
+  --cui-list-group-bg: var(--color-card-light);
+  --cui-list-group-border-color: var(--color-border);
+  --cui-list-group-hover-bg: var(--color-bg-secondary-light);
+  
+  // Variables CoreUI pour les modales
+  --cui-modal-bg: var(--color-card-light);
+  --cui-modal-header-border-color: var(--color-border);
+  --cui-modal-footer-border-color: var(--color-border);
+  
+  // Variables CoreUI pour les dropdowns
+  --cui-dropdown-bg: var(--color-card-light);
+  --cui-dropdown-border-color: var(--color-border);
+  --cui-dropdown-link-color: var(--color-text-light);
+  --cui-dropdown-link-hover-color: var(--color-text-light);
+  --cui-dropdown-link-hover-bg: var(--color-bg-secondary-light);
+  
+  // Variables CoreUI pour les navs
+  --cui-nav-link-color: var(--color-text-light);
+  --cui-nav-link-hover-color: var(--color-primary);
+  --cui-nav-tabs-border-color: var(--color-border);
+  --cui-nav-tabs-link-hover-border-color: var(--color-border);
+  --cui-nav-tabs-link-active-color: var(--color-primary);
+  --cui-nav-tabs-link-active-bg: var(--color-card-light);
+  --cui-nav-tabs-link-active-border-color: var(--color-border);
+  
+  // Variables CoreUI pour les progress bars
+  --cui-progress-bg: var(--color-bg-secondary-light);
+  --cui-progress-bar-bg: var(--color-primary);
+  
+  // Variables CoreUI pour les badges
+  --cui-badge-color: white;
+  
+  // Variables CoreUI pour les tooltips
+  --cui-tooltip-bg: var(--color-text-light);
+  --cui-tooltip-color: var(--color-card-light);
+  
+  // Variables CoreUI pour les popovers
+  --cui-popover-bg: var(--color-card-light);
+  --cui-popover-border-color: var(--color-border);
+  --cui-popover-header-bg: var(--color-bg-secondary-light);
+  --cui-popover-header-color: var(--color-text-light);
+  
+  // Variables CoreUI pour les alerts
+  --cui-alert-bg-scale: 0;
+  --cui-alert-border-scale: 0;
+  --cui-alert-color-scale: 0;
+}
+
+body.dark-mode {
+  // Variables CoreUI principales en mode sombre
+  --cui-primary: var(--color-primary);
+  --cui-secondary: var(--color-secondary);
+  --cui-success: var(--color-success);
+  --cui-info: var(--color-info);
+  --cui-warning: var(--color-warning);
+  --cui-danger: var(--color-danger);
+  --cui-light: var(--color-card-dark);
+  --cui-dark: var(--color-text-dark);
+  
+  // Variables CoreUI pour les textes en mode sombre
+  --cui-body-color: var(--color-text-dark);
+  --cui-body-bg: var(--color-bg-dark);
+  --cui-heading-color: var(--color-text-dark);
+  
+  // Variables CoreUI pour les cartes en mode sombre
+  --cui-card-bg: var(--color-card-dark);
+  --cui-card-border-color: #1a1a1a;
+  --cui-card-cap-bg: #1a1a1a;
+  
+  // Variables CoreUI pour les bordures en mode sombre
+  --cui-border-color: #1a1a1a;
+  --cui-border-color-translucent: #1a1a1a;
+  
+  // Variables CoreUI pour les inputs en mode sombre
+  --cui-input-bg: var(--color-card-dark);
+  --cui-input-border-color: #1a1a1a;
+  --cui-input-color: var(--color-text-dark);
+  
+  // Variables CoreUI pour les boutons en mode sombre
+  --cui-btn-bg: var(--color-primary);
+  --cui-btn-border-color: var(--color-primary);
+  --cui-btn-color: white;
+  
+  // Variables CoreUI pour les tableaux en mode sombre
+  --cui-table-bg: var(--color-card-dark);
+  --cui-table-border-color: #1a1a1a;
+  --cui-table-striped-bg: #1a1a1a;
+  --cui-table-hover-bg: #1a1a1a;
+  
+  // Variables CoreUI pour les listes en mode sombre
+  --cui-list-group-bg: var(--color-card-dark);
+  --cui-list-group-border-color: #1a1a1a;
+  --cui-list-group-hover-bg: #1a1a1a;
+  
+  // Variables CoreUI pour les modales en mode sombre
+  --cui-modal-bg: var(--color-card-dark);
+  --cui-modal-header-border-color: #1a1a1a;
+  --cui-modal-footer-border-color: #1a1a1a;
+  
+  // Variables CoreUI pour les dropdowns en mode sombre
+  --cui-dropdown-bg: var(--color-card-dark);
+  --cui-dropdown-border-color: #1a1a1a;
+  --cui-dropdown-link-color: var(--color-text-dark);
+  --cui-dropdown-link-hover-color: var(--color-text-dark);
+  --cui-dropdown-link-hover-bg: #1a1a1a;
+  
+  // Variables CoreUI pour les navs en mode sombre
+  --cui-nav-link-color: var(--color-text-dark);
+  --cui-nav-link-hover-color: var(--color-primary);
+  --cui-nav-tabs-border-color: #1a1a1a;
+  --cui-nav-tabs-link-hover-border-color: #1a1a1a;
+  --cui-nav-tabs-link-active-color: var(--color-primary);
+  --cui-nav-tabs-link-active-bg: var(--color-card-dark);
+  --cui-nav-tabs-link-active-border-color: #1a1a1a;
+  
+  // Variables CoreUI pour les progress bars en mode sombre
+  --cui-progress-bg: #1a1a1a;
+  --cui-progress-bar-bg: var(--color-primary);
+  
+  // Variables CoreUI pour les badges en mode sombre
+  --cui-badge-color: white;
+  
+  // Variables CoreUI pour les tooltips en mode sombre
+  --cui-tooltip-bg: var(--color-text-dark);
+  --cui-tooltip-color: var(--color-card-dark);
+  
+  // Variables CoreUI pour les popovers en mode sombre
+  --cui-popover-bg: var(--color-card-dark);
+  --cui-popover-border-color: #1a1a1a;
+  --cui-popover-header-bg: #1a1a1a;
+  --cui-popover-header-color: var(--color-text-dark);
+  
+  // Variables CoreUI pour les alerts en mode sombre
+  --cui-alert-bg-scale: 0;
+  --cui-alert-border-scale: 0;
+  --cui-alert-color-scale: 0;
+}
+
+// Styles supplémentaires pour améliorer l'expérience
+.table {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.table th {
+  background: var(--color-bg-secondary-light);
+  color: var(--color-text-light);
+  font-weight: 600;
+  border-bottom: 2px solid var(--color-border);
+}
+
+body.dark-mode .table th {
+  background: #1a1a1a;
+  color: var(--color-text-dark);
+  border-bottom: 2px solid #1a1a1a;
+}
+
+.form-control {
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.form-control:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+body.dark-mode .form-control {
+  border-color: #1a1a1a;
+  background: var(--color-card-dark);
+  color: var(--color-text-dark);
+}
+
+body.dark-mode .form-control:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.badge {
+  border-radius: 6px;
+  font-weight: 600;
+  padding: 0.5em 0.75em;
 }
 
 .wrapper {

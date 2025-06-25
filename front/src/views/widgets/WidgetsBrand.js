@@ -49,7 +49,7 @@ const WidgetsBrand = (props) => {
                     {
                       backgroundColor: 'rgba(255,255,255,.1)',
                       borderColor: 'rgba(255,255,255,.55)',
-                      pointHoverBackgroundColor: '#fff',
+                      pointHoverBackgroundColor: getComputedStyle(document.body).getPropertyValue('--color-card-light').trim() || "#ffffff",
                       borderWidth: 2,
                       data: [65, 59, 84, 84, 51, 55, 40],
                       fill: true,
@@ -66,7 +66,7 @@ const WidgetsBrand = (props) => {
             { title: 'feeds', value: '459' },
           ]}
           style={{
-            '--cui-card-cap-bg': '#3b5998',
+            '--cui-card-cap-bg': getComputedStyle(document.body).getPropertyValue('--color-primary').trim() || "#3b82f6",
           }}
         />
       </CCol>
@@ -83,7 +83,7 @@ const WidgetsBrand = (props) => {
                     {
                       backgroundColor: 'rgba(255,255,255,.1)',
                       borderColor: 'rgba(255,255,255,.55)',
-                      pointHoverBackgroundColor: '#fff',
+                      pointHoverBackgroundColor: getComputedStyle(document.body).getPropertyValue('--color-card-light').trim() || "#ffffff",
                       borderWidth: 2,
                       data: [1, 13, 9, 17, 34, 41, 38],
                       fill: true,
@@ -100,7 +100,7 @@ const WidgetsBrand = (props) => {
             { title: 'tweets', value: '1.792' },
           ]}
           style={{
-            '--cui-card-cap-bg': '#00aced',
+            '--cui-card-cap-bg': getComputedStyle(document.body).getPropertyValue('--color-info').trim() || "#06b6d4",
           }}
         />
       </CCol>
@@ -117,7 +117,7 @@ const WidgetsBrand = (props) => {
                     {
                       backgroundColor: 'rgba(255,255,255,.1)',
                       borderColor: 'rgba(255,255,255,.55)',
-                      pointHoverBackgroundColor: '#fff',
+                      pointHoverBackgroundColor: getComputedStyle(document.body).getPropertyValue('--color-card-light').trim() || "#ffffff",
                       borderWidth: 2,
                       data: [78, 81, 80, 45, 34, 12, 40],
                       fill: true,
@@ -134,7 +134,7 @@ const WidgetsBrand = (props) => {
             { title: 'feeds', value: '1.292' },
           ]}
           style={{
-            '--cui-card-cap-bg': '#4875b4',
+            '--cui-card-cap-bg': getComputedStyle(document.body).getPropertyValue('--color-secondary').trim() || "#64748b",
           }}
         />
       </CCol>
@@ -152,7 +152,7 @@ const WidgetsBrand = (props) => {
                     {
                       backgroundColor: 'rgba(255,255,255,.1)',
                       borderColor: 'rgba(255,255,255,.55)',
-                      pointHoverBackgroundColor: '#fff',
+                      pointHoverBackgroundColor: getComputedStyle(document.body).getPropertyValue('--color-card-light').trim() || "#ffffff",
                       borderWidth: 2,
                       data: [35, 23, 56, 22, 97, 23, 64],
                       fill: true,

@@ -48,7 +48,7 @@ const Flags = React.lazy(() => import('./views/icons/flags/Flags'))
 const Brands = React.lazy(() => import('./views/icons/brands/Brands'))
 
 // Notifications
-const Alerts = React.lazy(() => import('./views/notifications/alerts/Alerts'))
+const Alerts = React.lazy(() => import('./views/alerts/Alerts'))
 const Badges = React.lazy(() => import('./views/notifications/badges/Badges'))
 const Modals = React.lazy(() => import('./views/notifications/modals/Modals'))
 const Toasts = React.lazy(() => import('./views/notifications/toasts/Toasts'))
@@ -141,7 +141,7 @@ const routes = [
   
   // Routes Surveillance
   { path: '/anomalies', name: 'Anomalies', element: Anomalies || Placeholder },
-  { path: '/alerts', name: 'Alertes', element: Alerts || Placeholder },
+  { path: '/alert', name: 'Alertes', element: Alerts || Placeholder },
   
   // Routes Logs
   { path: '/logs', name: 'Logs reseau', element: Logs || Placeholder },

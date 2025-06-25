@@ -9,7 +9,6 @@ import DocsIcons from './DocsIcons'
 import DocsLink from './DocsLink'
 import DocsExample from './DocsExample'
 import SpaceParticles from './SpaceParticles'
-import FuturisticEffects, { FuturisticButton, FuturisticCard } from './FuturisticEffects'
 import ThemeToggle from './ThemeToggle'
 
 export {
@@ -24,8 +23,5 @@ export {
   DocsLink,
   DocsExample,
   SpaceParticles,
-  FuturisticEffects,
-  FuturisticButton,
-  FuturisticCard,
   ThemeToggle,
 }

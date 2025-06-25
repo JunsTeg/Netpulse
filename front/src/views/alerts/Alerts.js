@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   CCard,
   CCardBody,
@@ -33,12 +33,15 @@ import CIcon from '@coreui/icons-react'
 import {
   cilBell,
   cilFilter,
-  cilRefresh,
+  cilReload,
   cilCheckCircle,
   cilSettings,
   cilTrash,
   cilPlus,
 } from '@coreui/icons'
+import axios from 'axios'
+import authService from '../../services/auth.service'
+import { API_CONFIG, buildApiUrl } from '../../config/api.config'
 
 const Alerts = () => {
   const [selectedType, setSelectedType] = useState('all')
@@ -46,52 +49,37 @@ const Alerts = () => {
   const [selectedAlert, setSelectedAlert] = useState(null)
   const [modalVisible, setModalVisible] = useState(false)
   const [settingsModalVisible, setSettingsModalVisible] = useState(false)
+  const [alerts, setAlerts] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
-  // Donnees de test pour les alertes
-  const alerts = [
-    {
-      id: 1,
-      name: 'Alerte Latence',
-      type: 'performance',
-      condition: 'Latence > 100ms',
-      status: 'active',
-      lastTriggered: '2024-03-20 14:30:00',
-      description: 'Alerte en cas de latence elevee sur le reseau',
-      threshold: 100,
-      duration: 5,
-      notification: ['email', 'sms'],
-    },
-    {
-      id: 2,
-      name: 'Alerte Utilisation CPU',
-      type: 'system',
-      condition: 'CPU > 80%',
-      status: 'active',
-      lastTriggered: '2024-03-20 13:45:00',
-      description: 'Alerte en cas d\'utilisation CPU elevee',
-      threshold: 80,
-      duration: 3,
-      notification: ['email'],
-    },
-    {
-      id: 3,
-      name: 'Alerte Memoire',
-      type: 'system',
-      condition: 'Memoire > 90%',
-      status: 'inactive',
-      lastTriggered: '2024-03-19 16:20:00',
-      description: 'Alerte en cas d\'utilisation memoire elevee',
-      threshold: 90,
-      duration: 2,
-      notification: ['email', 'sms', 'webhook'],
-    },
-  ]
+  // Charger les alertes depuis l'API
+  const fetchAlerts = async () => {
+    setLoading(true)
+    try {
+      const token = authService.getToken()
+      authService.setAuthHeader(token)
+      const response = await axios.get(buildApiUrl('/api/network/alerts'), {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setAlerts(response.data.results || [])
+      setError(null)
+    } catch (err) {
+      setError('Erreur lors du chargement des alertes: ' + (err.response?.data?.message || err.message))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchAlerts()
+  }, [])
 
   // Fonction pour filtrer les alertes
   const filteredAlerts = alerts.filter((alert) => {
-    const matchesType = selectedType === 'all' || alert.type === selectedType
+    const matchesType = selectedType === 'all' || alert.anomalyType === selectedType || alert.type === selectedType
     const matchesSearch = Object.values(alert).some((value) =>
-      value.toString().toLowerCase().includes(searchTerm.toLowerCase()),
+      value && value.toString().toLowerCase().includes(searchTerm.toLowerCase()),
     )
     return matchesType && matchesSearch
   })
@@ -99,11 +87,12 @@ const Alerts = () => {
   // Fonction pour obtenir la couleur du badge selon le type
   const getTypeColor = (type) => {
     switch (type) {
-      case 'performance':
-        return 'info'
-      case 'system':
+      case 'CPU_HIGH':
+      case 'MEMORY_HIGH':
         return 'warning'
-      case 'security':
+      case 'LATENCY_HIGH':
+        return 'info'
+      case 'SECURITY':
         return 'danger'
       default:
         return 'secondary'
@@ -125,6 +114,42 @@ const Alerts = () => {
   const handleAlertClick = (alert) => {
     setSelectedAlert(alert)
     setModalVisible(true)
+  }
+
+  // Fonction pour acquitter une alerte
+  const handleAcknowledge = async (alertId) => {
+    try {
+      const token = authService.getToken()
+      authService.setAuthHeader(token)
+      await axios.post(buildApiUrl(`/api/network/alerts/${alertId}/ack`), {}, { headers: { Authorization: `Bearer ${token}` } })
+      fetchAlerts()
+    } catch (err) {
+      alert('Erreur lors de l\'acquittement : ' + (err.response?.data?.message || err.message))
+    }
+  }
+
+  // Fonction pour assigner une alerte
+  const handleAssign = async (alertId, userId) => {
+    try {
+      const token = authService.getToken()
+      authService.setAuthHeader(token)
+      await axios.post(buildApiUrl(`/api/network/alerts/${alertId}/assign`), { userId }, { headers: { Authorization: `Bearer ${token}` } })
+      fetchAlerts()
+    } catch (err) {
+      alert('Erreur lors de l\'assignation : ' + (err.response?.data?.message || err.message))
+    }
+  }
+
+  // Fonction pour commenter une alerte
+  const handleComment = async (alertId, message) => {
+    try {
+      const token = authService.getToken()
+      authService.setAuthHeader(token)
+      await axios.post(buildApiUrl(`/api/network/alerts/${alertId}/comment`), { message }, { headers: { Authorization: `Bearer ${token}` } })
+      fetchAlerts()
+    } catch (err) {
+      alert('Erreur lors de l\'ajout du commentaire : ' + (err.response?.data?.message || err.message))
+    }
   }
 
   return (
@@ -190,33 +215,33 @@ const Alerts = () => {
               </CTableRow>
             </CTableHead>
             <CTableBody>
-              {filteredAlerts.map((alert) => (
+              {loading ? (
+                <CTableRow><CTableDataCell colSpan={7}>Chargement...</CTableDataCell></CTableRow>
+              ) : error ? (
+                <CTableRow><CTableDataCell colSpan={7}>{error}</CTableDataCell></CTableRow>
+              ) : filteredAlerts.map((alert) => (
                 <CTableRow
-                  key={alert.id}
+                  key={alert.alertId}
                   className="cursor-pointer"
                   onClick={() => handleAlertClick(alert)}
                 >
                   <CTableDataCell>
                     <CIcon icon={cilBell} className="me-2" />
-                    {alert.name}
+                    {alert.anomalyType || alert.type || alert.name}
                   </CTableDataCell>
                   <CTableDataCell>
-                    <CBadge color={getTypeColor(alert.type)}>
-                      {alert.type === 'performance'
-                        ? 'Performance'
-                        : alert.type === 'system'
-                        ? 'Systeme'
-                        : 'Securite'}
+                    <CBadge color={getTypeColor(alert.anomalyType || alert.type)}>
+                      {alert.anomalyType || alert.type}
                     </CBadge>
                   </CTableDataCell>
-                  <CTableDataCell>{alert.condition}</CTableDataCell>
+                  <CTableDataCell>{alert.description || alert.condition}</CTableDataCell>
                   <CTableDataCell>
                     <CBadge color={getStatusColor(alert.status)}>
                       {alert.status === 'active' ? 'Active' : 'Inactive'}
                     </CBadge>
                   </CTableDataCell>
-                  <CTableDataCell>{alert.lastTriggered}</CTableDataCell>
-                  <CTableDataCell>{alert.description}</CTableDataCell>
+                  <CTableDataCell>{alert.triggeredAt ? new Date(alert.triggeredAt).toLocaleString() : ''}</CTableDataCell>
+                  <CTableDataCell>{alert.hostname || alert.deviceId || ''}</CTableDataCell>
                   <CTableDataCell>
                     <CButtonGroup>
                       <CButton
@@ -242,6 +267,7 @@ const Alerts = () => {
                       >
                         <CIcon icon={cilTrash} />
                       </CButton>
+                      <CButton color="success" size="sm" onClick={e => { e.stopPropagation(); handleAcknowledge(alert.alertId) }}>Acquitter</CButton>
                     </CButtonGroup>
                   </CTableDataCell>
                 </CTableRow>

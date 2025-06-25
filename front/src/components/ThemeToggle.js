@@ -3,44 +3,31 @@ import CIcon from '@coreui/icons-react';
 import { cilMoon, cilSun } from '@coreui/icons';
 
 const ThemeToggle = () => {
-  const [isDark, setIsDark] = useState(true); // Par défaut en mode sombre
+  const [isDark, setIsDark] = useState(false); // Par défaut en mode clair
 
   useEffect(() => {
     // Récupérer la préférence sauvegardée
     const savedTheme = localStorage.getItem('netpulse-theme');
-    if (savedTheme) {
-      setIsDark(savedTheme === 'dark');
-      applyTheme(savedTheme === 'dark' ? 'dark' : 'light');
+    if (savedTheme === 'dark') {
+      document.body.classList.add('dark-mode');
+      setIsDark(true);
     } else {
-      // Par défaut en mode sombre
-      applyTheme('dark');
+      document.body.classList.remove('dark-mode');
+      setIsDark(false);
     }
   }, []);
 
-  const applyTheme = (theme) => {
-    const body = document.body;
-    
-    // Supprimer les classes existantes
-    body.classList.remove('netpulse-futuristic', 'netpulse-dark', 'netpulse-light');
-    
-    // Ajouter les nouvelles classes
-    body.classList.add('netpulse-futuristic');
-    body.classList.add(theme === 'dark' ? 'netpulse-dark' : 'netpulse-light');
-    
-    // Sauvegarder la préférence
-    localStorage.setItem('netpulse-theme', theme);
-  };
-
   const toggleTheme = () => {
-    const newTheme = isDark ? 'light' : 'dark';
-    // Ajout de la classe pour la transition galactique
-    const body = document.body;
-    body.classList.add('theme-transition');
-    setTimeout(() => {
-      body.classList.remove('theme-transition');
-    }, 800);
-    setIsDark(!isDark);
-    applyTheme(newTheme);
+    const currentlyDark = document.body.classList.contains('dark-mode');
+    if (currentlyDark) {
+      document.body.classList.remove('dark-mode');
+      localStorage.setItem('netpulse-theme', 'light');
+      setIsDark(false);
+    } else {
+      document.body.classList.add('dark-mode');
+      localStorage.setItem('netpulse-theme', 'dark');
+      setIsDark(true);
+    }
   };
 
   return (
@@ -74,19 +61,11 @@ const ThemeToggle = () => {
           <CIcon 
             icon={cilSun} 
             size="lg"
-            style={{
-              filter: 'drop-shadow(0 0 10px rgba(74, 158, 255, 0.5))',
-              animation: 'pulse 2s ease-in-out infinite',
-            }}
           />
         ) : (
           <CIcon 
             icon={cilMoon} 
             size="lg"
-            style={{
-              filter: 'drop-shadow(0 0 10px rgba(30, 58, 138, 0.5))',
-              animation: 'pulse-light 2s ease-in-out infinite',
-            }}
           />
         )}
       </div>

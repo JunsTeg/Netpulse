@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common"
 import { v4 as uuidv4 } from "uuid"
-import { Device } from "./device.model"
+import { Device, DeviceStatus } from "./device.model"
 import { QueryTypes } from "sequelize"
 import { sequelize } from "../../database"
 
@@ -13,13 +13,35 @@ export class AppareilRepository {
    */
   async upsertDevice(device: Device): Promise<string | null> {
     try {
-      const existing = await sequelize.query<{ id: string }>(
-        `SELECT id FROM appareils WHERE ipAddress = :ip OR macAddress = :mac LIMIT 1`,
-        {
-          replacements: { ip: device.ipAddress, mac: device.macAddress },
-          type: QueryTypes.SELECT,
-        }
-      )
+      // 1. Détection d'unicité : priorité MAC, sinon IP+hostname
+      let existing: { id: string }[] = []
+      if (device.macAddress && device.macAddress.trim() !== "") {
+        existing = await sequelize.query<{ id: string }>(
+          `SELECT id FROM appareils WHERE macAddress = :mac LIMIT 1`,
+          {
+            replacements: { mac: device.macAddress },
+            type: QueryTypes.SELECT,
+          }
+        )
+      }
+      if ((!existing || existing.length === 0) && device.ipAddress && device.hostname) {
+        existing = await sequelize.query<{ id: string }>(
+          `SELECT id FROM appareils WHERE ipAddress = :ip AND hostname = :hostname LIMIT 1`,
+          {
+            replacements: { ip: device.ipAddress, hostname: device.hostname },
+            type: QueryTypes.SELECT,
+          }
+        )
+      }
+
+      // 2. Toujours garantir la cohérence des champs
+      if (!device.stats || typeof device.stats !== 'object') {
+        device.stats = { cpu: 0, memory: 0, uptime: "0", status: DeviceStatus.INACTIVE, services: [] }
+        this.logger.warn(`[UPSERT] stats manquant ou invalide pour ${device.ipAddress}, valeur par défaut appliquée`)
+      }
+      if (!(Array.isArray((device as any).sources))) {
+        (device as any).sources = [(device as any).source || "inconnu"]
+      }
 
       let id: string
       if (existing && existing.length > 0) {
@@ -31,7 +53,8 @@ export class AppareilRepository {
             os = :os,
             deviceType = :deviceType,
             stats = :stats,
-            lastSeen = :lastSeen
+            lastSeen = :lastSeen,
+            isActive = TRUE
           WHERE id = :id`,
           {
             replacements: {
@@ -46,14 +69,14 @@ export class AppareilRepository {
             type: QueryTypes.UPDATE,
           }
         )
-        this.logger.debug(`[UPSERT] Appareil mis à jour: ${device.ipAddress}`)
+        this.logger.debug(`[UPSERT] Appareil mis à jour (fusion): ${device.ipAddress} / ${device.macAddress}`)
       } else {
         id = device.id || uuidv4()
         await sequelize.query(
           `INSERT INTO appareils (
-            id, hostname, ipAddress, macAddress, os, deviceType, stats, lastSeen, firstDiscovered
+            id, hostname, ipAddress, macAddress, os, deviceType, stats, lastSeen, firstDiscovered, isActive
           ) VALUES (
-            :id, :hostname, :ipAddress, :macAddress, :os, :deviceType, :stats, :lastSeen, :firstDiscovered
+            :id, :hostname, :ipAddress, :macAddress, :os, :deviceType, :stats, :lastSeen, :firstDiscovered, TRUE
           )`,
           {
             replacements: {
@@ -70,12 +93,86 @@ export class AppareilRepository {
             type: QueryTypes.INSERT,
           }
         )
-        this.logger.debug(`[UPSERT] Nouvel appareil inséré: ${device.ipAddress}`)
+        this.logger.debug(`[UPSERT] Nouvel appareil inséré: ${device.ipAddress} / ${device.macAddress}`)
       }
+
+      // Détection automatique d'anomalies (CPU, RAM, latence, etc.)
+      try {
+        const { cpu, memory, latency } = device.stats || {}
+        let anomalyType = null
+        let severity = null
+        let description = ''
+        if (cpu > 90) {
+          anomalyType = 'CPU_HIGH'
+          severity = 'critical'
+          description = `CPU élevé (${cpu}%)`
+        } else if (memory > 90) {
+          anomalyType = 'MEMORY_HIGH'
+          severity = 'critical'
+          description = `Mémoire élevée (${memory}%)`
+        } else if (latency && latency > 200) {
+          anomalyType = 'LATENCY_HIGH'
+          severity = 'warning'
+          description = `Latence élevée (${latency} ms)`
+        }
+        if (anomalyType) {
+          const anomalyId = uuidv4()
+          await sequelize.query(
+            `INSERT INTO anomalies (id, deviceId, severity, description, anomalyType, detectedAt, isConfirmed) VALUES (:id, :deviceId, :severity, :description, :anomalyType, NOW(), FALSE)`,
+            {
+              replacements: {
+                id: anomalyId,
+                deviceId: id,
+                severity,
+                description,
+                anomalyType,
+              },
+              type: QueryTypes.INSERT,
+            }
+          )
+          await sequelize.query(
+            `INSERT INTO alertes (id, anomalyId, status, priority, triggeredAt, notified) VALUES (:id, :anomalyId, 'active', :priority, NOW(), FALSE)`,
+            {
+              replacements: {
+                id: uuidv4(),
+                anomalyId,
+                priority: severity === 'critical' ? 'high' : 'medium',
+              },
+              type: QueryTypes.INSERT,
+            }
+          )
+          this.logger.warn(`[ANOMALY] ${description} sur appareil ${device.hostname || device.ipAddress}`)
+        }
+      } catch (err) {
+        this.logger.error(`[ANOMALY] Erreur détection/insert anomalie: ${err.message}`)
+      }
+
       return id
     } catch (error) {
       this.logger.error(`[UPSERT] Erreur upsert appareil: ${error.message}`)
       return null
+    }
+  }
+
+  /**
+   * Désactive tous les appareils qui ne sont pas dans la liste des IDs détectés
+   */
+  async disableMissingDevices(detectedIds: string[]): Promise<void> {
+    try {
+      if (!Array.isArray(detectedIds) || detectedIds.length === 0) {
+        this.logger.warn('[DISABLE] Liste des IDs détectés vide, aucune désactivation effectuée.')
+        return
+      }
+      await sequelize.query(
+        `UPDATE appareils SET isActive = FALSE WHERE id NOT IN (:ids)`,
+        {
+          replacements: { ids: detectedIds },
+          type: QueryTypes.UPDATE,
+        }
+      )
+      this.logger.log(`[DISABLE] Appareils non détectés désactivés (isActive=FALSE).`)
+    } catch (error) {
+      this.logger.error(`[DISABLE] Erreur lors de la désactivation des appareils: ${error.message}`)
     }
   }
 

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, UseGuards, Logger, HttpException, HttpStatus, Body, Req, Headers } from "@nestjs/common"
+import { Controller, Get, Post, UseGuards, Logger, HttpException, HttpStatus, Body, Req, Headers, Query, Param } from "@nestjs/common"
 import { NetworkService } from "./network.service"
 import { NetworkDetectorService } from "./network-detector.service"
 import { RouterQueryService } from "./agents/router-query.service"
@@ -7,6 +7,10 @@ import type { RequestWithUser } from "../../auth/auth.types"
 import * as os from "os"
 import { AppareilRepository } from "./appareil.repository"
 import { NmapAgentService } from "./agents/nmap.service"
+import { QueryTypes } from "sequelize"
+import { sequelize } from "../../database"
+import { v4 as uuidv4 } from "uuid"
+import { Op } from "sequelize"
 
 interface ScanConfigDto {
   target: string
@@ -105,18 +109,24 @@ export class NetworkController {
   @Get("topology")
   async getTopology(@Req() req: RequestWithUser) {
     try {
-      this.logger.log(`[CONTROLLER] Récupération de la topologie demandée par l'utilisateur ${req.user?.id || 'inconnu'}`)
-      
-      const devices = this.networkDetector.getDevices()
-      const topology = await this.networkService.getNetworkTopology(devices)
-
+      this.logger.log(`[CONTROLLER] Récupération de la topologie persistée demandée par l'utilisateur ${req.user?.id || 'inconnu'}`)
+      // Récupérer la dernière topologie persistée
+      const [row] = await sequelize.query(
+        `SELECT data FROM topologie_reseau WHERE isActive = TRUE ORDER BY updatedAt DESC LIMIT 1`,
+        { type: QueryTypes.SELECT }
+      )
+      const data = (row as any)?.data
+      if (!data) {
+        throw new HttpException("Aucune topologie persistée trouvée", HttpStatus.NOT_FOUND)
+      }
+      const topology = typeof data === 'string' ? JSON.parse(data) : data
       return {
         success: true,
         data: topology,
       }
     } catch (error) {
-      this.logger.error(`[CONTROLLER] Erreur topologie: ${error.message}`)
-      throw new HttpException("Erreur lors de la génération de la topologie", HttpStatus.INTERNAL_SERVER_ERROR)
+      this.logger.error(`[CONTROLLER] Erreur récupération topologie persistée: ${error.message}`)
+      throw new HttpException("Erreur lors de la récupération de la topologie", HttpStatus.INTERNAL_SERVER_ERROR)
     }
   }
 
@@ -344,6 +354,7 @@ export class NetworkController {
 
       // Upsert en base pour chaque appareil détecté
       const now = new Date()
+      const detectedIds: string[] = []
       for (const device of results.combinedDevices) {
         const toSave = {
           ...device,
@@ -353,9 +364,38 @@ export class NetworkController {
         }
         const realId = await this.appareilRepository.upsertDevice(toSave)
         if (realId) {
+          detectedIds.push(realId)
           await this.nmapAgentService.saveNetworkStats(realId, device.stats)
           await this.nmapAgentService.saveScanLogs({ ...device, id: realId })
         }
+      }
+
+      // Désactiver les appareils non détectés
+      await this.appareilRepository.disableMissingDevices(detectedIds)
+
+      // Générer et persister la topologie réseau
+      try {
+        const topology = await this.networkService.getNetworkTopology(results.combinedDevices)
+        // Désactiver les anciennes topologies
+        await sequelize.query(
+          `UPDATE topologie_reseau SET isActive = FALSE WHERE isActive = TRUE`,
+          { type: QueryTypes.UPDATE }
+        )
+        // Insérer la nouvelle topologie
+        await sequelize.query(
+          `INSERT INTO topologie_reseau (id, name, data, isActive, createdAt, updatedAt) VALUES (:id, :name, :data, TRUE, NOW(), NOW())`,
+          {
+            replacements: {
+              id: uuidv4(),
+              name: `Scan du ${new Date().toLocaleString()}`,
+              data: JSON.stringify(topology),
+            },
+            type: QueryTypes.INSERT,
+          }
+        )
+        this.logger.log(`[TOPOLOGY] Nouvelle topologie persistée.`)
+      } catch (err) {
+        this.logger.error(`[TOPOLOGY] Erreur lors de la persistance de la topologie: ${err.message}`)
       }
 
       this.logger.log(`[CONTROLLER] Scan complet terminé: ${results.combinedDevices.length} appareils uniques`)
@@ -377,6 +417,170 @@ export class NetworkController {
       this.logger.error(`[CONTROLLER] Erreur scan complet: ${error.message}`)
       throw new HttpException(`Erreur lors du scan complet: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR)
     }
+  }
+
+  @Get("/dashboard/summary")
+  async getDashboardSummary() {
+    try {
+      // 1. Nombre d'appareils actifs/inactifs
+      const [devices] = await sequelize.query(
+        `SELECT isActive, COUNT(*) as count FROM appareils GROUP BY isActive`,
+        { type: QueryTypes.SELECT }
+      )
+      let devicesActive = 0, devicesInactive = 0
+      if (Array.isArray(devices)) {
+        devices.forEach((row: any) => {
+          if ((row as any).isActive) devicesActive += Number((row as any).count)
+          else devicesInactive += Number((row as any).count)
+        })
+      } else if (devices) {
+        if ((devices as any).isActive) devicesActive = Number((devices as any).count)
+        else devicesInactive = Number((devices as any).count)
+      }
+
+      // 2. Nombre d'alertes actives et incidents critiques
+      const [alerts] = await sequelize.query(
+        `SELECT severity, COUNT(*) as count FROM alertes a JOIN anomalies an ON a.anomalyId = an.id WHERE a.status = 'active' GROUP BY an.severity`,
+        { type: QueryTypes.SELECT }
+      )
+      let alertsActive = 0, incidentsCritical = 0
+      if (Array.isArray(alerts)) {
+        alerts.forEach((row: any) => {
+          if (((row as any).severity || '').toLowerCase() === 'critical') incidentsCritical += Number((row as any).count)
+          else alertsActive += Number((row as any).count)
+        })
+      } else if (alerts) {
+        if (((alerts as any).severity || '').toLowerCase() === 'critical') incidentsCritical = Number((alerts as any).count)
+        else alertsActive = Number((alerts as any).count)
+      }
+
+      // 3. Bande passante totale (download/upload sur la dernière heure)
+      const [bandwidth] = await sequelize.query(
+        `SELECT SUM(bandwidth) as totalDownload, SUM(cpuUsage) as totalUpload FROM statistiques_reseau WHERE timestamp >= NOW() - INTERVAL 1 HOUR`,
+        { type: QueryTypes.SELECT }
+      )
+      const totalDownload = (bandwidth as any)?.totalDownload || 0
+      const totalUpload = (bandwidth as any)?.totalUpload || 0
+
+      // 4. Evolution sur 24h (points pour graphiques)
+      const [evolution] = await sequelize.query(
+        `SELECT HOUR(timestamp) as hour, SUM(bandwidth) as download, SUM(cpuUsage) as upload FROM statistiques_reseau WHERE timestamp >= NOW() - INTERVAL 24 HOUR GROUP BY HOUR(timestamp) ORDER BY hour`,
+        { type: QueryTypes.SELECT }
+      )
+      const evolution24h = Array.isArray(evolution) ? evolution : []
+
+      return {
+        success: true,
+        data: {
+          devicesActive,
+          devicesInactive,
+          alertsActive,
+          incidentsCritical,
+          totalDownload,
+          totalUpload,
+          evolution24h,
+        }
+      }
+    } catch (error) {
+      this.logger.error(`[DASHBOARD] Erreur récupération synthèse dashboard: ${error.message}`)
+      throw new HttpException("Erreur lors de la récupération du dashboard", HttpStatus.INTERNAL_SERVER_ERROR)
+    }
+  }
+
+  @Get("/alerts")
+  async getAlerts(@Query() query) {
+    // Pagination et filtres
+    const page = parseInt(query.page) || 1
+    const pageSize = parseInt(query.pageSize) || 20
+    const offset = (page - 1) * pageSize
+    const status = query.status
+    const severity = query.severity
+    const deviceId = query.deviceId
+    const whereAlert = []
+    const whereAnomaly = []
+    if (status) whereAlert.push(`a.status = :status`)
+    if (severity) whereAnomaly.push(`an.severity = :severity`)
+    if (deviceId) whereAnomaly.push(`an.deviceId = :deviceId`)
+    const whereClause = [
+      whereAlert.length ? whereAlert.join(' AND ') : null,
+      whereAnomaly.length ? whereAnomaly.join(' AND ') : null
+    ].filter(Boolean).join(' AND ')
+    const sql = `
+      SELECT a.id as alertId, a.status, a.priority, a.triggeredAt, a.resolvedAt, a.notified,
+             an.id as anomalyId, an.severity, an.description, an.anomalyType, an.detectedAt, an.isConfirmed,
+             ap.id as deviceId, ap.hostname, ap.ipAddress, ap.macAddress, ap.deviceType
+      FROM alertes a
+      JOIN anomalies an ON a.anomalyId = an.id
+      JOIN appareils ap ON an.deviceId = ap.id
+      ${whereClause ? 'WHERE ' + whereClause : ''}
+      ORDER BY a.triggeredAt DESC
+      LIMIT :pageSize OFFSET :offset
+    `
+    const results = await sequelize.query(sql, {
+      replacements: {
+        status,
+        severity,
+        deviceId,
+        pageSize,
+        offset
+      },
+      type: QueryTypes.SELECT
+    })
+    return { page, pageSize, results }
+  }
+
+  @Post("/alerts/:id/ack")
+  async acknowledgeAlert(@Param('id') id: string, @Req() req: RequestWithUser) {
+    // Acquitter une alerte (status -> resolved, resolvedAt = NOW)
+    await sequelize.query(
+      `UPDATE alertes SET status = 'resolved', resolvedAt = NOW() WHERE id = :id`,
+      { replacements: { id }, type: QueryTypes.UPDATE }
+    )
+    return { success: true }
+  }
+
+  @Post("/alerts/:id/assign")
+  async assignAlert(@Param('id') id: string, @Body('userId') userId: string) {
+    // Assigner une alerte à un utilisateur (mettre à jour anomalies.assignedToUserId)
+    await sequelize.query(
+      `UPDATE anomalies SET assignedToUserId = :userId WHERE id = (SELECT anomalyId FROM alertes WHERE id = :id)`,
+      { replacements: { id, userId }, type: QueryTypes.UPDATE }
+    )
+    return { success: true }
+  }
+
+  @Post("/alerts/:id/comment")
+  async commentAlert(@Param('id') id: string, @Req() req: RequestWithUser, @Body('message') message: string) {
+    // Ajouter un commentaire dans la table retours
+    const userId = req.user?.id
+    await sequelize.query(
+      `INSERT INTO retours (id, userId, alertId, message, createdAt) VALUES (UUID(), :userId, :alertId, :message, NOW())`,
+      { replacements: { userId, alertId: id, message }, type: QueryTypes.INSERT }
+    )
+    return { success: true }
+  }
+
+  @Get("/notifications")
+  async getNotifications(@Req() req: RequestWithUser) {
+    const userId = req.user?.id
+    if (!userId) throw new HttpException('Utilisateur non authentifié', HttpStatus.UNAUTHORIZED)
+    const sql = `SELECT * FROM notifications WHERE userId = :userId ORDER BY createdAt DESC`
+    const notifications = await sequelize.query(sql, {
+      replacements: { userId },
+      type: QueryTypes.SELECT
+    })
+    return { notifications }
+  }
+
+  @Post("/notifications/:id/read")
+  async markNotificationRead(@Param('id') id: string, @Req() req: RequestWithUser) {
+    const userId = req.user?.id
+    if (!userId) throw new HttpException('Utilisateur non authentifié', HttpStatus.UNAUTHORIZED)
+    await sequelize.query(
+      `UPDATE notifications SET isRead = TRUE, readAt = NOW() WHERE id = :id AND userId = :userId`,
+      { replacements: { id, userId }, type: QueryTypes.UPDATE }
+    )
+    return { success: true }
   }
 
   private async detectActiveNetwork() {

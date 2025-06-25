@@ -29,7 +29,7 @@ const ExampleToast = () => {
           focusable="false"
           role="img"
         >
-          <rect width="100%" height="100%" fill="#007aff"></rect>
+          <rect width="100%" height="100%" fill={getComputedStyle(document.body).getPropertyValue('--color-primary').trim() || "#3b82f6"}></rect>
         </svg>
         <strong className="me-auto">CoreUI for React.js</strong>
         <small>7 min ago</small>
@@ -59,7 +59,7 @@ const Toasts = () => {
           <CCardBody>
             <p className="text-body-secondary small">
               Toasts are as flexible as you need and have very little required markup. At a minimum,
-              we require a single element to contain your “toasted” content and strongly encourage a
+              we require a single element to contain your "toasted" content and strongly encourage a
               dismiss button.
             </p>
             <DocsExample href="components/toast">
@@ -74,7 +74,7 @@ const Toasts = () => {
                     focusable="false"
                     role="img"
                   >
-                    <rect width="100%" height="100%" fill="#007aff"></rect>
+                    <rect width="100%" height="100%" fill={getComputedStyle(document.body).getPropertyValue('--color-primary').trim() || "#3b82f6"}></rect>
                   </svg>
                   <strong className="me-auto">CoreUI for React.js</strong>
                   <small>7 min ago</small>
@@ -107,7 +107,7 @@ const Toasts = () => {
                     focusable="false"
                     role="img"
                   >
-                    <rect width="100%" height="100%" fill="#007aff"></rect>
+                    <rect width="100%" height="100%" fill={getComputedStyle(document.body).getPropertyValue('--color-primary').trim() || "#3b82f6"}></rect>
                   </svg>
                   <strong className="me-auto">CoreUI for React.js</strong>
                   <small>7 min ago</small>
@@ -141,7 +141,7 @@ const Toasts = () => {
                       focusable="false"
                       role="img"
                     >
-                      <rect width="100%" height="100%" fill="#007aff"></rect>
+                      <rect width="100%" height="100%" fill={getComputedStyle(document.body).getPropertyValue('--color-primary').trim() || "#3b82f6"}></rect>
                     </svg>
                     <strong className="me-auto">CoreUI for React.js</strong>
                     <small>7 min ago</small>
@@ -159,7 +159,7 @@ const Toasts = () => {
                       focusable="false"
                       role="img"
                     >
-                      <rect width="100%" height="100%" fill="#007aff"></rect>
+                      <rect width="100%" height="100%" fill={getComputedStyle(document.body).getPropertyValue('--color-primary').trim() || "#3b82f6"}></rect>
                     </svg>
                     <strong className="me-auto">CoreUI for React.js</strong>
                     <small>7 min ago</small>
@@ -225,7 +225,7 @@ const Toasts = () => {
               Building on the above example, you can create different toast color schemes with our{' '}
               <a href="https://coreui.io/docs/utilities/colors">color</a> and{' '}
               <a href="https://coreui.io/docs/utilities/background">background</a> utilities. Here
-              we&#39;ve set <code>color=&#34;primary&#34;</code> and added <code>.text-white</code>{' '}
+              we&#39;ve set <code>color="primary"</code> and added <code>.text-white</code>{' '}
               class to the <code>&lt;Ctoast&gt;</code>, and then set <code>white</code> property to
               our close button. For a crisp edge, we remove the default border with{' '}
               <code>.border-0</code>.

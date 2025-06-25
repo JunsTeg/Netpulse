@@ -184,34 +184,43 @@ const Topology = () => {
     try {
       setLoading(true)
       const response = await axios.get('/api/network/topology')
-      if (response.data) {
-        // Transformer les données de l'API en format attendu par le composant
+      if (response.data && response.data.data) {
+        const data = response.data.data
+        // Tolérance aux champs manquants
+        const nodes = Array.isArray(data.devices) ? data.devices : (Array.isArray(data.nodes) ? data.nodes : [])
+        const links = Array.isArray(data.connections) ? data.connections : (Array.isArray(data.links) ? data.links : [])
+        const stats = data.stats || {}
+        // Normalisation des nœuds
         const transformedData = {
-          nodes: response.data.nodes.map(node => ({
-            id: node.id,
-            hostname: node.hostname,
-            ipAddress: node.ipAddress,
-            macAddress: node.macAddress,
-            os: node.os,
-            deviceType: node.deviceType.toLowerCase(),
+          nodes: nodes.map(node => ({
+            id: node.id || node.ip || node.hostname || Math.random().toString(36).substring(2),
+            hostname: node.hostname || 'Non disponible',
+            ipAddress: node.ipAddress || node.ip || 'Non disponible',
+            macAddress: node.macAddress || 'Non disponible',
+            os: node.os || 'Non disponible',
+            deviceType: (node.deviceType || node.type || 'other').toLowerCase(),
             stats: {
-              status: node.stats.status,
-              vlan: node.stats.vlan,
-              bandwidth: node.stats.bandwidth,
-              cpuUsage: node.stats.cpuUsage,
-              memoryUsage: node.stats.memoryUsage
+              status: node.stats?.status || 'inactive',
+              vlan: node.stats?.vlan || 'N/A',
+              bandwidth: node.stats?.bandwidth || 0,
+              cpuUsage: node.stats?.cpuUsage || 0,
+              memoryUsage: node.stats?.memoryUsage || 0
             },
-            lastSeen: node.lastSeen,
-            firstDiscovered: node.firstDiscovered
+            lastSeen: node.lastSeen || null,
+            firstDiscovered: node.firstDiscovered || null
           })),
-          links: response.data.links.map(link => ({
+          links: links.map(link => ({
             source: link.source,
             target: link.target,
-            type: link.type,
-            bandwidth: link.bandwidth
-          }))
+            type: link.type || 'LAN',
+            bandwidth: link.bandwidth || '1Gbps'
+          })),
+          stats
         }
         setNetworkData(transformedData)
+        filterNetworkData(selectedView)
+      } else {
+        setNetworkData({ nodes: [], links: [], stats: {} })
         filterNetworkData(selectedView)
       }
       setError(null)
@@ -289,19 +298,25 @@ const Topology = () => {
     return () => clearTimeout(timer)
   }, [])
 
-  // Fonction pour obtenir la couleur selon le statut
+  // Fonction pour obtenir la couleur de statut basée sur les variables CSS
   const getStatusColor = (status) => {
-    switch (status) {
-      case "active":
-        return "#2eb85c" // success (vert)
-      case "warning":
-        return "#f9b115" // warning (orange)
-      case "danger":
-        return "#e55353" // danger (rouge)
-      case "inactive":
-        return "#8a93a2" // secondary (gris)
+    switch (status?.toLowerCase()) {
+      case 'active':
+      case 'online':
+      case 'ok':
+        return getComputedStyle(document.body).getPropertyValue('--color-success').trim() || "#10b981"
+      case 'warning':
+      case 'degraded':
+        return getComputedStyle(document.body).getPropertyValue('--color-warning').trim() || "#f59e0b"
+      case 'down':
+      case 'offline':
+      case 'error':
+        return getComputedStyle(document.body).getPropertyValue('--color-danger').trim() || "#ef4444"
+      case 'inactive':
+      case 'unknown':
+        return getComputedStyle(document.body).getPropertyValue('--color-muted-light').trim() || "#64748b"
       default:
-        return "#8a93a2" // secondary (gris)
+        return getComputedStyle(document.body).getPropertyValue('--color-muted-light').trim() || "#64748b"
     }
   }
 
@@ -499,7 +514,7 @@ const Topology = () => {
       .enter()
       .append("line")
       .attr("class", "link")
-      .style("stroke", "#6c757d")
+      .style("stroke", getComputedStyle(document.body).getPropertyValue('--color-border').trim() || "#e2e8f0")
       .style("stroke-width", 2)
       .style("stroke-dasharray", (d) => (d.type === "wifi" ? "5,5" : d.type === "vlan" ? "10,5" : "0"))
 
@@ -518,7 +533,7 @@ const Topology = () => {
       .attr("r", (d) => (d.deviceType === "vlan" ? 40 : 25))
       .style("fill", (d) => getStatusColor(d.stats.status))
       .style("stroke-width", "2px")
-      .style("stroke", "#ffffff")
+      .style("stroke", getComputedStyle(document.body).getPropertyValue('--color-text-light').trim() || "#0f172a")
       .style("cursor", "pointer")
 
     // Gestion du clic sur les cercles
@@ -596,7 +611,7 @@ const Topology = () => {
         const icon = getDeviceIcon(d.deviceType)
         return `<div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="${icon.path}" fill="#ffffff"/>
+            <path d="${icon.path}" fill={getComputedStyle(document.body).getPropertyValue('--color-text-light').trim() || "#0f172a"}/>
           </svg>
         </div>`
       })
@@ -609,7 +624,7 @@ const Topology = () => {
       .attr("text-anchor", "middle")
       .text((d) => d.hostname)
       .style("font-size", (d) => (d.deviceType === "vlan" ? "14px" : "12px"))
-      .style("fill", "#666")
+      .style("fill", getComputedStyle(document.body).getPropertyValue('--color-text-secondary-light').trim() || "#475569")
       .style("pointer-events", "none") // On desactive les evenements sur le label
 
     // Gestionnaire de clic sur le SVG pour fermer le panneau
@@ -788,7 +803,7 @@ const Topology = () => {
                     right: 0,
                     zIndex: 1000,
                     backgroundColor: 'white',
-                    border: '1px solid #ddd',
+                    border: `1px solid ${getComputedStyle(document.body).getPropertyValue('--color-border').trim() || "#e2e8f0"}`,
                     borderRadius: '4px',
                     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
                     maxHeight: '300px',
@@ -806,19 +821,19 @@ const Topology = () => {
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
-                        borderBottom: index < suggestions.length - 1 ? '1px solid #eee' : 'none'
+                        borderBottom: index < suggestions.length - 1 ? `1px solid ${getComputedStyle(document.body).getPropertyValue('--color-border').trim() || "#e2e8f0"}` : 'none'
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = getComputedStyle(document.body).getPropertyValue('--color-bg-secondary-light').trim() || "#f1f5f9"}
                       onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
                     >
                       <div style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d={suggestion.icon.path} fill="#666"/>
+                          <path d={suggestion.icon.path} fill={getComputedStyle(document.body).getPropertyValue('--color-text-secondary-light').trim() || "#475569"}/>
                         </svg>
                       </div>
                       <div>
                         <div style={{ fontWeight: 'bold' }}>{suggestion.value}</div>
-                        <small style={{ color: '#666' }}>
+                        <small style={{ color: getComputedStyle(document.body).getPropertyValue('--color-text-secondary-light').trim() || "#475569" }}>
                           {suggestion.type === 'hostname' ? `Appareil (${suggestion.deviceType})` :
                            suggestion.type === 'deviceType' ? 'Type d\'appareil' :
                            'VLAN'}
@@ -866,11 +881,11 @@ const Topology = () => {
                     <div className="d-flex align-items-center">
                       <CBadge
                         color={
-                          getStatusColor(selectedNode.stats.status) === "#2eb85c"
+                          getStatusColor(selectedNode.stats.status) === getComputedStyle(document.body).getPropertyValue('--color-success').trim() || "#10b981"
                             ? "success"
-                            : getStatusColor(selectedNode.stats.status) === "#f9b115"
+                            : getStatusColor(selectedNode.stats.status) === getComputedStyle(document.body).getPropertyValue('--color-warning').trim() || "#f59e0b"
                               ? "warning"
-                              : getStatusColor(selectedNode.stats.status) === "#e55353"
+                              : getStatusColor(selectedNode.stats.status) === getComputedStyle(document.body).getPropertyValue('--color-danger').trim() || "#ef4444"
                                 ? "danger"
                                 : "secondary"
                         }
@@ -895,11 +910,11 @@ const Topology = () => {
                           <strong>Statut:</strong>
                           <CBadge
                             color={
-                              getStatusColor(selectedNode.status) === "#2eb85c"
+                              getStatusColor(selectedNode.status) === getComputedStyle(document.body).getPropertyValue('--color-success').trim() || "#10b981"
                                 ? "success"
-                                : getStatusColor(selectedNode.status) === "#f9b115"
+                                : getStatusColor(selectedNode.status) === getComputedStyle(document.body).getPropertyValue('--color-warning').trim() || "#f59e0b"
                                   ? "warning"
-                                  : getStatusColor(selectedNode.status) === "#e55353"
+                                  : getStatusColor(selectedNode.status) === getComputedStyle(document.body).getPropertyValue('--color-danger').trim() || "#ef4444"
                                     ? "danger"
                                     : "secondary"
                             }
@@ -933,11 +948,11 @@ const Topology = () => {
                                     <span>{device.hostname}</span>
                                     <CBadge
                                       color={
-                                        getStatusColor(device.status) === "#2eb85c"
+                                        getStatusColor(device.status) === getComputedStyle(document.body).getPropertyValue('--color-success').trim() || "#10b981"
                                           ? "success"
-                                          : getStatusColor(device.status) === "#f9b115"
+                                          : getStatusColor(device.status) === getComputedStyle(document.body).getPropertyValue('--color-warning').trim() || "#f59e0b"
                                             ? "warning"
-                                            : getStatusColor(device.status) === "#e55353"
+                                            : getStatusColor(device.status) === getComputedStyle(document.body).getPropertyValue('--color-danger').trim() || "#ef4444"
                                               ? "danger"
                                               : "secondary"
                                       }
