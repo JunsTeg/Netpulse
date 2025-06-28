@@ -7,6 +7,7 @@ import * as os from "os"
 import * as snmp from "net-snmp"
 import { sequelize } from "../../../database"
 import { QueryTypes } from "sequelize"
+import { AppareilRepository } from "../appareil.repository"
 
 const execAsync = promisify(exec)
 
@@ -45,6 +46,10 @@ export class NmapAgentService {
     retries: 1,
   }
 
+  constructor(
+    private readonly appareilRepository: AppareilRepository,
+  ) {}
+
   async execute(config: NmapScanConfig, userId?: string): Promise<NmapScanResult> {
     const startTime = Date.now()
     const actionId = uuidv4()
@@ -70,8 +75,27 @@ export class NmapAgentService {
       const enrichedDevices = await this.enrichBasicInfo(nmapDevices)
       await this.logAction(actionId, userId, "network_scan", `${enrichedDevices.length} appareils enrichis`)
 
-      // 3. Collecte des statistiques pour chaque appareil
+      // 3. CRITIQUE: Upsert de tous les appareils AVANT de collecter les statistiques
+      const savedDevices: Device[] = []
       for (const device of enrichedDevices) {
+        try {
+          // Upsert de l'appareil pour garantir son existence en base
+          const savedDeviceId = await this.appareilRepository.upsertDevice(device)
+          if (savedDeviceId) {
+            // Récupérer l'appareil avec l'ID réel de la base
+            const savedDevice = { ...device, id: savedDeviceId }
+            savedDevices.push(savedDevice)
+            this.logger.debug(`[SCAN] Appareil upserté: ${device.ipAddress} -> ID: ${savedDeviceId}`)
+          } else {
+            this.logger.warn(`[SCAN] Échec upsert pour appareil: ${device.ipAddress}`)
+          }
+        } catch (error) {
+          this.logger.error(`[SCAN] Erreur upsert appareil ${device.ipAddress}: ${error.message}`)
+        }
+      }
+
+      // 4. Collecte des statistiques pour chaque appareil SAUVEGARDÉ
+      for (const device of savedDevices) {
         try {
           const networkStats = await this.collectNetworkStatsWithSNMP(device.ipAddress)
           await this.saveNetworkStats(device.id, networkStats)
@@ -87,12 +111,12 @@ export class NmapAgentService {
         actionId,
         userId,
         "network_scan_complete",
-        `Scan terminé. ${enrichedDevices.length} appareils trouvés en ${Date.now() - startTime}ms`,
+        `Scan terminé. ${savedDevices.length} appareils trouvés en ${Date.now() - startTime}ms`,
       )
 
       return {
         success: true,
-        devices: enrichedDevices,
+        devices: savedDevices,
         scanTime: new Date(),
         scanDuration: Date.now() - startTime,
       }

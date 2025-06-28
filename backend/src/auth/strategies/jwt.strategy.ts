@@ -22,13 +22,20 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         throw new UnauthorizedException('Token invalide: informations manquantes');
       }
 
+      // Vérification de l'expiration (double vérification)
+      const currentTime = Math.floor(Date.now() / 1000);
+      if (payload.exp && currentTime > payload.exp) {
+        this.logger.error(`[JWT] Token expiré: exp=${payload.exp}, current=${currentTime}`);
+        throw new UnauthorizedException('Token expiré');
+      }
+
       // Retour de l'utilisateur avec les informations du payload
       const user = {
         id: payload.sub,
         username: payload.username,
       };
       
-      this.logger.log(`[JWT] Token validé pour l'utilisateur ${user.id}`);
+      this.logger.log(`[JWT] Token validé pour l'utilisateur ${user.id} (jti: ${payload.jti || 'N/A'})`);
       return user;
     } catch (error) {
       this.logger.error(`[JWT] Erreur validation token: ${error.message}`);

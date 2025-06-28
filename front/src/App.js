@@ -13,6 +13,9 @@ const Register = React.lazy(() => import('./views/pages/register/Register'))
 const Page404 = React.lazy(() => import('./views/pages/page404/Page404'))
 const Page500 = React.lazy(() => import('./views/pages/page500/Page500'))
 
+// Components
+const ProtectedRoute = React.lazy(() => import('./components/ProtectedRoute'))
+
 // Reference globale pour le toast
 export const addToast = (title, message, color = 'primary') => {
   const toast = (
@@ -25,6 +28,9 @@ export const addToast = (title, message, color = 'primary') => {
   )
   window.dispatchEvent(new CustomEvent('show-toast', { detail: toast }))
 }
+
+// Exposer addToast globalement
+window.addToast = addToast;
 
 const App = () => {
   const { isColorModeSet, setColorMode } = useColorModes('coreui-free-react-admin-template-theme')
@@ -75,7 +81,15 @@ const App = () => {
             <Route exact path="/404" name="Page 404" element={<Page404 />} />
             <Route exact path="/500" name="Page 500" element={<Page500 />} />
             <Route path="/" element={<Navigate to="/login" replace />} />
-            <Route path="*" name="Home" element={<DefaultLayout />} />
+            <Route 
+              path="*" 
+              name="Home" 
+              element={
+                <ProtectedRoute>
+                  <DefaultLayout />
+                </ProtectedRoute>
+              } 
+            />
           </Routes>
         </Suspense>
       </BrowserRouter>

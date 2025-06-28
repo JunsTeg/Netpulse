@@ -5,6 +5,30 @@ import { API_CONFIG, buildApiUrl } from '../config/api.config';
 axios.defaults.withCredentials = true;
 axios.defaults.headers.common['Content-Type'] = 'application/json';
 
+// Intercepteur pour gérer automatiquement les erreurs d'authentification
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      console.log('[AUTH] Token expiré ou invalide, déconnexion automatique');
+      
+      // Notification à l'utilisateur
+      if (window.addToast) {
+        window.addToast('Session expirée', 'Votre session a expiré. Veuillez vous reconnecter.', 'warning');
+      }
+      
+      localStorage.removeItem('user');
+      delete axios.defaults.headers.common['Authorization'];
+      
+      // Redirection vers la page de connexion
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 class AuthService {
   // Methode pour enregistrer un nouvel utilisateur
   async register(username, email, password) {
@@ -87,7 +111,35 @@ class AuthService {
   // Methode pour verifier si l'utilisateur est connecte
   isLoggedIn() {
     const user = this.getCurrentUser();
-    return !!(user && user.access_token && user.id);
+    if (!user || !user.access_token || !user.id) {
+      console.log('[AUTH] Utilisateur ou token manquant');
+      return false;
+    }
+    
+    // Vérification de l'expiration du token
+    try {
+      const token = user.access_token;
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const currentTime = Math.floor(Date.now() / 1000);
+      
+      {/*console.log('[AUTH] Vérification token:', {
+        exp: payload.exp,
+        currentTime,
+        timeLeft: payload.exp - currentTime
+      });*/}
+      
+      if (payload.exp && currentTime > payload.exp) {
+        console.log('[AUTH] Token expiré côté client');
+        this.logout();
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('[AUTH] Erreur lors de la vérification du token:', error);
+      this.logout();
+      return false;
+    }
   }
 
   // Methode pour recuperer le token

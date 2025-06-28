@@ -123,6 +123,19 @@ const Register = () => {
                       {loading ? 'Création du compte...' : 'Créer le compte'}
                     </CButton>
                   </div>
+                  
+                  <div className="text-center mt-3">
+                    <p className="mb-0">
+                      Déjà un compte ?{' '}
+                      <CButton 
+                        color="link" 
+                        className="p-0"
+                        onClick={() => navigate('/login')}
+                      >
+                        Se connecter
+                      </CButton>
+                    </p>
+                  </div>
                 </CForm>
               </CCardBody>
             </CCard>

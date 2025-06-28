@@ -64,20 +64,24 @@ const fakeStats = {
 const getCssVar = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
 
 const StatCard = ({ title, value, icon, subtitle }) => (
-  <div className="card">
-    <div className="card-body">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <CIcon icon={icon} size="xl" style={{ color: getCssVar('--color-primary') }} />
-        <span>{title}</span>
+  <CCard className="h-100">
+    <CCardBody className="d-flex flex-column justify-content-center align-items-center text-center p-4">
+      <div className="d-flex align-items-center mb-3">
+        <CIcon icon={icon} size="xl" style={{ color: getCssVar('--color-primary'), marginRight: '0.75rem' }} />
+        <span className="fw-semibold">{title}</span>
       </div>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: getCssVar('--color-primary'), marginBottom: '0.5rem' }}>
+      <div className="mb-2">
+        <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: getCssVar('--color-primary') }}>
           {value}
         </div>
-        {subtitle && <div style={{ fontSize: '0.9rem', color: getCssVar('--color-text-secondary-light') }}>{subtitle}</div>}
       </div>
-    </div>
-  </div>
+      {subtitle && (
+        <div style={{ fontSize: '0.9rem', color: getCssVar('--color-text-secondary-light') }}>
+          {subtitle}
+        </div>
+      )}
+    </CCardBody>
+  </CCard>
 );
 
 const Dashboard = () => {
@@ -88,18 +92,18 @@ const Dashboard = () => {
   }, [])
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <div className="card">
-        <div className="card-body">
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#4a9eff', marginBottom: '0.5rem' }}>
-              🚀 CENTRE DE CONTRÔLE NETPULSE
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="p-4">
+      {/* Header */}
+      <CCard className="mb-4">
+        <CCardBody className="text-center py-4">
+          <h1 className="display-4 fw-bold text-primary mb-0">
+            🚀 CENTRE DE CONTRÔLE NETPULSE
+          </h1>
+        </CCardBody>
+      </CCard>
 
-      <CRow className="mb-4">
+      {/* Stats Cards */}
+      <CRow className="mb-4 g-3">
         <CCol xs={12} sm={6} lg={3}>
           <StatCard 
             title="Alertes Actives" 
@@ -134,128 +138,132 @@ const Dashboard = () => {
         </CCol>
       </CRow>
 
-      <CRow className="mb-4">
+      {/* Charts Row */}
+      <CRow className="mb-4 g-3">
         <CCol xs={12} lg={6}>
-          <div className="card">
-            <div className="card-body">
-              <h5 className="card-title">📡 Analyse de Latence - 7 Jours</h5>
-              <div style={{ height: '300px' }}>
-                <Line
-                  data={{
-                    labels: data.latencyLabels,
-                    datasets: [
-                      {
-                        label: 'Latence (ms)',
-                        data: data.latencyData,
-                        borderColor: getCssVar('--color-primary'),
-                        backgroundColor: 'rgba(74, 158, 255, 0.1)',
-                        fill: true,
-                        tension: 0.3,
-                        borderWidth: 3,
-                      },
-                    ],
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: {
-                        labels: {
-                          color: getCssVar('--color-secondary')
-                        }
-                      }
+          <CCard className="h-100">
+            <CCardHeader className="bg-transparent">
+              <h5 className="card-title mb-0">📡 Analyse de Latence - 7 Jours</h5>
+            </CCardHeader>
+            <CCardBody className="d-flex align-items-center justify-content-center" style={{ height: '300px' }}>
+              <Line
+                data={{
+                  labels: data.latencyLabels,
+                  datasets: [
+                    {
+                      label: 'Latence (ms)',
+                      data: data.latencyData,
+                      borderColor: getCssVar('--color-primary'),
+                      backgroundColor: 'rgba(74, 158, 255, 0.1)',
+                      fill: true,
+                      tension: 0.3,
+                      borderWidth: 3,
                     },
-                    scales: {
-                      y: {
-                        ticks: {
-                          color: getCssVar('--color-secondary')
-                        },
-                        grid: {
-                          color: 'rgba(168, 199, 232, 0.1)'
-                        }
-                      },
-                      x: {
-                        ticks: {
-                          color: getCssVar('--color-secondary')
-                        },
-                        grid: {
-                          color: 'rgba(168, 199, 232, 0.1)'
-                        }
+                  ],
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: {
+                      labels: {
+                        color: getCssVar('--color-secondary')
                       }
                     }
-                  }}
-                />
-              </div>
-            </div>
-          </div>
+                  },
+                  scales: {
+                    y: {
+                      ticks: {
+                        color: getCssVar('--color-secondary')
+                      },
+                      grid: {
+                        color: 'rgba(168, 199, 232, 0.1)'
+                      }
+                    },
+                    x: {
+                      ticks: {
+                        color: getCssVar('--color-secondary')
+                      },
+                      grid: {
+                        color: 'rgba(168, 199, 232, 0.1)'
+                      }
+                    }
+                  }
+                }}
+              />
+            </CCardBody>
+          </CCard>
         </CCol>
 
         <CCol xs={12} lg={6}>
-          <div className="card">
-            <div className="card-body">
-              <h5 className="card-title">⚡ Utilisation CPU - Machines Prioritaires</h5>
-              <div style={{ height: '300px' }}>
-                <Bar
-                  data={{
-                    labels: data.topDevices.map((d) => d.host),
-                    datasets: [
-                      {
-                        label: 'Utilisation CPU (%)',
-                        data: data.topDevices.map((d) => d.cpu),
-                        backgroundColor: [getCssVar('--color-primary'), getCssVar('--color-secondary'), getCssVar('--color-tertiary')],
-                        borderRadius: 8,
-                        borderWidth: 2,
-                        borderColor: getCssVar('--color-primary'),
-                      },
-                    ],
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: {
-                        labels: {
-                          color: getCssVar('--color-secondary')
-                        }
-                      }
+          <CCard className="h-100">
+            <CCardHeader className="bg-transparent">
+              <h5 className="card-title mb-0">⚡ Utilisation CPU - Machines Prioritaires</h5>
+            </CCardHeader>
+            <CCardBody className="d-flex align-items-center justify-content-center" style={{ height: '300px' }}>
+              <Bar
+                data={{
+                  labels: data.topDevices.map((d) => d.host),
+                  datasets: [
+                    {
+                      label: 'Utilisation CPU (%)',
+                      data: data.topDevices.map((d) => d.cpu),
+                      backgroundColor: [getCssVar('--color-primary'), getCssVar('--color-secondary'), getCssVar('--color-tertiary')],
+                      borderRadius: 8,
+                      borderWidth: 2,
+                      borderColor: getCssVar('--color-primary'),
                     },
-                    scales: {
-                      y: {
-                        ticks: {
-                          color: getCssVar('--color-secondary')
-                        },
-                        grid: {
-                          color: 'rgba(168, 199, 232, 0.1)'
-                        }
-                      },
-                      x: {
-                        ticks: {
-                          color: getCssVar('--color-secondary')
-                        },
-                        grid: {
-                          color: 'rgba(168, 199, 232, 0.1)'
-                        }
+                  ],
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: {
+                      labels: {
+                        color: getCssVar('--color-secondary')
                       }
                     }
-                  }}
-                />
-              </div>
-            </div>
-          </div>
+                  },
+                  scales: {
+                    y: {
+                      ticks: {
+                        color: getCssVar('--color-secondary')
+                      },
+                      grid: {
+                        color: 'rgba(168, 199, 232, 0.1)'
+                      }
+                    },
+                    x: {
+                      ticks: {
+                        color: getCssVar('--color-secondary')
+                      },
+                      grid: {
+                        color: 'rgba(168, 199, 232, 0.1)'
+                      }
+                    }
+                  }
+                }}
+              />
+            </CCardBody>
+          </CCard>
         </CCol>
       </CRow>
 
-      <CRow className="mb-4">
+      {/* Tables Row */}
+      <CRow className="mb-4 g-3">
         <CCol xs={12} lg={6}>
-          <div className="card">
-            <div className="card-body">
-              <h5 className="card-title">🚨 Détection d'Anomalies</h5>
-              <CTable hover responsive align="middle" style={{ color: getCssVar('--color-text-light') }}>
+          <CCard className="h-100">
+            <CCardHeader className="bg-transparent">
+              <h5 className="card-title mb-0">🚨 Détection d'Anomalies</h5>
+            </CCardHeader>
+            <CCardBody className="p-0">
+              <CTable hover responsive align="middle" className="mb-0">
                 <CTableHead>
                   <CTableRow>
-                    <CTableHeaderCell style={{ color: getCssVar('--color-primary') }}>Type</CTableHeaderCell>
-                    <CTableHeaderCell style={{ color: getCssVar('--color-primary') }}>Appareil</CTableHeaderCell>
-                    <CTableHeaderCell style={{ color: getCssVar('--color-primary') }}>Heure</CTableHeaderCell>
+                    <CTableHeaderCell className="text-primary">Type</CTableHeaderCell>
+                    <CTableHeaderCell className="text-primary">Appareil</CTableHeaderCell>
+                    <CTableHeaderCell className="text-primary">Heure</CTableHeaderCell>
                   </CTableRow>
                 </CTableHead>
                 <CTableBody>
@@ -272,26 +280,28 @@ const Dashboard = () => {
                   ))}
                 </CTableBody>
               </CTable>
-            </div>
-          </div>
+            </CCardBody>
+          </CCard>
         </CCol>
 
         <CCol xs={12} lg={6}>
-          <div className="card">
-            <div className="card-body">
-              <h5 className="card-title">⚠️ Machines à Risque Élevé</h5>
-              <CTable hover responsive align="middle" style={{ color: getCssVar('--color-text-light') }}>
+          <CCard className="h-100">
+            <CCardHeader className="bg-transparent">
+              <h5 className="card-title mb-0">⚠️ Machines à Risque Élevé</h5>
+            </CCardHeader>
+            <CCardBody className="p-0">
+              <CTable hover responsive align="middle" className="mb-0">
                 <CTableHead>
                   <CTableRow>
-                    <CTableHeaderCell style={{ color: getCssVar('--color-primary') }}>Nom</CTableHeaderCell>
-                    <CTableHeaderCell style={{ color: getCssVar('--color-primary') }}>CPU</CTableHeaderCell>
-                    <CTableHeaderCell style={{ color: getCssVar('--color-primary') }}>Latence</CTableHeaderCell>
+                    <CTableHeaderCell className="text-primary">Nom</CTableHeaderCell>
+                    <CTableHeaderCell className="text-primary">CPU</CTableHeaderCell>
+                    <CTableHeaderCell className="text-primary">Latence</CTableHeaderCell>
                   </CTableRow>
                 </CTableHead>
                 <CTableBody>
                   {data.topDevices.map((device) => (
                     <CTableRow key={device.id}>
-                      <CTableDataCell>{device.host}</CTableDataCell>
+                      <CTableDataCell className="fw-semibold">{device.host}</CTableDataCell>
                       <CTableDataCell>
                         <div className="d-flex align-items-center">
                           <CProgress
@@ -303,7 +313,7 @@ const Dashboard = () => {
                               borderRadius: '8px'
                             }}
                           />
-                          <span className="ms-2 fw-semibold">{device.cpu}%</span>
+                          <span className="fw-semibold">{device.cpu}%</span>
                         </div>
                       </CTableDataCell>
                       <CTableDataCell>{device.latency} ms</CTableDataCell>
@@ -311,32 +321,34 @@ const Dashboard = () => {
                   ))}
                 </CTableBody>
               </CTable>
-            </div>
-          </div>
+            </CCardBody>
+          </CCard>
         </CCol>
       </CRow>
 
-      <CRow className="mb-4">
+      {/* Lists Row */}
+      <CRow className="mb-4 g-3">
         <CCol xs={12} lg={6}>
-          <div className="card">
-            <div className="card-body">
-              <h5 className="card-title">🤖 État des Agents de Surveillance</h5>
-              <CListGroup flush style={{ background: 'transparent' }}>
-                {data.agentStatus.map((agent) => (
+          <CCard className="h-100">
+            <CCardHeader className="bg-transparent">
+              <h5 className="card-title mb-0">🤖 État des Agents de Surveillance</h5>
+            </CCardHeader>
+            <CCardBody className="p-0">
+              <CListGroup flush className="border-0">
+                {data.agentStatus.map((agent, index) => (
                   <CListGroupItem 
                     key={agent.id}
+                    className={`border-0 ${index !== data.agentStatus.length - 1 ? 'border-bottom' : ''}`}
                     style={{ 
                       background: 'transparent',
-                      border: '1px solid rgba(74, 158, 255, 0.2)',
-                      marginBottom: '0.5rem',
-                      borderRadius: '8px',
-                      color: getCssVar('--color-text-light')
+                      borderColor: 'rgba(74, 158, 255, 0.2) !important',
+                      padding: '1rem'
                     }}
                   >
                     <div className="d-flex justify-content-between align-items-center">
                       <div>
-                        <strong>{agent.name}</strong>
-                        <div style={{ fontSize: '0.9rem', color: getCssVar('--color-text-secondary-light') }}>
+                        <div className="fw-semibold">{agent.name}</div>
+                        <div className="text-muted small">
                           Dernière exécution: {agent.lastRun}
                         </div>
                       </div>
@@ -352,55 +364,56 @@ const Dashboard = () => {
                   </CListGroupItem>
                 ))}
               </CListGroup>
-            </div>
-          </div>
+            </CCardBody>
+          </CCard>
         </CCol>
 
         <CCol xs={12} lg={6}>
-          <div className="card">
-            <div className="card-body">
-              <h5 className="card-title">📋 Journal d'Activité</h5>
-              <CListGroup flush style={{ background: 'transparent' }}>
-                {data.activityLog.map((log) => (
+          <CCard className="h-100">
+            <CCardHeader className="bg-transparent">
+              <h5 className="card-title mb-0">📋 Journal d'Activité</h5>
+            </CCardHeader>
+            <CCardBody className="p-0">
+              <CListGroup flush className="border-0">
+                {data.activityLog.map((log, index) => (
                   <CListGroupItem 
                     key={log.id}
+                    className={`border-0 ${index !== data.activityLog.length - 1 ? 'border-bottom' : ''}`}
                     style={{ 
                       background: 'transparent',
-                      border: '1px solid rgba(74, 158, 255, 0.2)',
-                      marginBottom: '0.5rem',
-                      borderRadius: '8px',
-                      color: getCssVar('--color-text-light')
+                      borderColor: 'rgba(74, 158, 255, 0.2) !important',
+                      padding: '1rem'
                     }}
                   >
                     <div className="d-flex justify-content-between align-items-center">
                       <div>
-                        <strong>{log.user}</strong>
-                        <div style={{ fontSize: '0.9rem', color: getCssVar('--color-text-secondary-light') }}>
+                        <div className="fw-semibold">{log.user}</div>
+                        <div className="text-muted small">
                           {log.action}
                         </div>
                       </div>
-                      <span style={{ fontSize: '0.9rem', color: getCssVar('--color-text-secondary-light') }}>
+                      <span className="text-muted small">
                         {log.time}
                       </span>
                     </div>
                   </CListGroupItem>
                 ))}
               </CListGroup>
-            </div>
-          </div>
+            </CCardBody>
+          </CCard>
         </CCol>
       </CRow>
 
+      {/* Action Buttons */}
       <CRow>
         <CCol xs={12}>
-          <div style={{ textAlign: 'center', marginTop: '2rem' }}>
-            <button className="btn btn-primary" 
+          <div className="text-center">
+            <button className="btn btn-primary btn-lg me-3" 
               onClick={() => console.log('Scan réseau lancé')}
-              style={{ marginRight: '1rem' }}
             >
               🔍 Lancer Scan Réseau
             </button>
-            <button className="btn btn-primary" 
+            <button className="btn btn-primary btn-lg" 
               onClick={() => console.log('Rapport généré')}
             >
               📊 Générer Rapport

@@ -297,6 +297,7 @@ export class NetworkController {
         for (const net of networksInfo) {
           const nmapResult = await this.networkService.scanNetwork(net.cidr, req.user.id)
           if (nmapResult && nmapResult.devices) {
+            // Les appareils sont déjà upsertés par le NmapAgentService
             nmapDevices = nmapDevices.concat(nmapResult.devices)
           }
         }
@@ -321,19 +322,30 @@ export class NetworkController {
         }
       }
 
-      // Ajouter les appareils du routeur
-      results.routerDevices.forEach(device => {
+      // Ajouter les appareils du routeur (nécessitent upsert car pas gérés par NmapAgentService)
+      for (const device of results.routerDevices) {
         const key = device.macAddress || (device.ipAddress + (device.hostname || ''))
         if (key && !deviceMap.has(key)) {
-          deviceMap.set(key, {
+          // Upsert des appareils du routeur
+          const toSave = {
             ...device,
-            sources: ['router']
-          })
+            lastSeen: new Date(),
+            firstDiscovered: device.firstDiscovered || new Date(),
+            status: 'connu',
+          }
+          const realId = await this.appareilRepository.upsertDevice(toSave)
+          if (realId) {
+            deviceMap.set(key, {
+              ...device,
+              id: realId,
+              sources: ['router']
+            })
+          }
         }
-      })
+      }
 
-      // Ajouter les appareils nmap
-      results.nmapDevices.forEach(device => {
+      // Ajouter les appareils nmap (déjà upsertés par NmapAgentService)
+      for (const device of results.nmapDevices) {
         const key = device.macAddress || (device.ipAddress + (device.hostname || ''))
         if (key) {
           if (deviceMap.has(key)) {
@@ -347,28 +359,13 @@ export class NetworkController {
             })
           }
         }
-      })
+      }
 
       results.combinedDevices = Array.from(deviceMap.values())
       results.scanDuration = Date.now() - startTime
 
-      // Upsert en base pour chaque appareil détecté
-      const now = new Date()
-      const detectedIds: string[] = []
-      for (const device of results.combinedDevices) {
-        const toSave = {
-          ...device,
-          lastSeen: now,
-          firstDiscovered: device.firstDiscovered || now,
-          status: 'connu',
-        }
-        const realId = await this.appareilRepository.upsertDevice(toSave)
-        if (realId) {
-          detectedIds.push(realId)
-          await this.nmapAgentService.saveNetworkStats(realId, device.stats)
-          await this.nmapAgentService.saveScanLogs({ ...device, id: realId })
-        }
-      }
+      // Récupérer les IDs des appareils détectés pour la désactivation
+      const detectedIds: string[] = results.combinedDevices.map(device => device.id).filter(Boolean)
 
       // Désactiver les appareils non détectés
       await this.appareilRepository.disableMissingDevices(detectedIds)

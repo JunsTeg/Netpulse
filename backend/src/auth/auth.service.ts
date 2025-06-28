@@ -142,7 +142,9 @@ export class AuthService {
   private generateToken(userId: string, username: string): string {
     const payload = { 
       sub: userId, 
-      username
+      username,
+      iat: Math.floor(Date.now() / 1000), // Timestamp de création
+      jti: uuidv4() // Identifiant unique du token
     };
     return this.jwtService.sign(payload);
   }
