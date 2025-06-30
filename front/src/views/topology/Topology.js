@@ -22,6 +22,7 @@ import {
   CNavLink,
   CTabContent,
   CTabPane,
+  CAlert,
 } from "@coreui/react"
 import CIcon from "@coreui/icons-react"
 import {
@@ -43,6 +44,8 @@ import {
 import "@coreui/coreui/dist/css/coreui.min.css"
 import "./Topology.css"
 import axios from 'axios'
+import authService from '../../services/auth.service'
+import { API_CONFIG, buildApiUrl } from '../../config/api.config'
 
 // Ajout des styles pour le thème
 const themeStyles = {
@@ -183,18 +186,38 @@ const Topology = () => {
   const fetchTopology = async () => {
     try {
       setLoading(true)
+      setError(null)
+      
+      // Vérification de l'authentification
+      const token = authService.getToken()
+      if (!token) {
+        console.log('Token manquant, redirection vers la page de connexion...')
+        window.location.href = '/login'
+        return
+      }
+
+      // Configuration du header d'authentification
+      authService.setAuthHeader(token)
+
+      console.log('[TOPOLOGY] Chargement de la topologie...')
       const response = await axios.get('/api/network/topology')
-      if (response.data && response.data.data) {
+      
+      if (response.data && response.data.success && response.data.data) {
         const data = response.data.data
-        // Tolérance aux champs manquants
+        console.log('[TOPOLOGY] Données reçues:', data)
+        
+        // Tolérance aux champs manquants et normalisation
         const nodes = Array.isArray(data.devices) ? data.devices : (Array.isArray(data.nodes) ? data.nodes : [])
         const links = Array.isArray(data.connections) ? data.connections : (Array.isArray(data.links) ? data.links : [])
         const stats = data.stats || {}
+        
+        console.log(`[TOPOLOGY] ${nodes.length} nœuds et ${links.length} liens trouvés`)
+        
         // Normalisation des nœuds
         const transformedData = {
           nodes: nodes.map(node => ({
             id: node.id || node.ip || node.hostname || Math.random().toString(36).substring(2),
-            hostname: node.hostname || 'Non disponible',
+            hostname: node.hostname || node.name || 'Non disponible',
             ipAddress: node.ipAddress || node.ip || 'Non disponible',
             macAddress: node.macAddress || 'Non disponible',
             os: node.os || 'Non disponible',
@@ -213,41 +236,332 @@ const Topology = () => {
             source: link.source,
             target: link.target,
             type: link.type || 'LAN',
-            bandwidth: link.bandwidth || '1Gbps'
+            bandwidth: link.bandwidth || link.metrics?.bandwidth || '1Gbps'
           })),
           stats
         }
+        
         setNetworkData(transformedData)
         filterNetworkData(selectedView)
+        console.log('[TOPOLOGY] Topologie chargée avec succès')
       } else {
-        setNetworkData({ nodes: [], links: [], stats: {} })
-        filterNetworkData(selectedView)
+        console.warn('[TOPOLOGY] Format de réponse inattendu:', response.data)
+        // Essayer de générer une topologie à partir des appareils
+        await generateTopologyFromDevices()
       }
-      setError(null)
     } catch (err) {
-      setError('Erreur lors du chargement de la topologie: ' + err.message)
+      console.error('[TOPOLOGY] Erreur lors du chargement:', err)
+      
+      // Gestion des différents types d'erreurs
+      if (err.response?.status === 401) {
+        authService.logout()
+        window.location.href = '/login'
+        return
+      }
+      
+      // Si c'est une erreur 404, 500 ou tout autre erreur liée à l'absence de topologie
+      if (err.response?.status === 404 || 
+          err.response?.status === 500 || 
+          err.message?.includes('topologie') ||
+          err.response?.data?.message?.includes('topologie')) {
+        
+        console.log('[TOPOLOGY] Aucune topologie trouvée, génération automatique...')
+        
+        // Vérifier d'abord si des appareils existent
+        const devicesExist = await checkDevicesExist()
+        
+        if (devicesExist) {
+          console.log('[TOPOLOGY] Des appareils existent, génération rapide...')
+          // Essayer de générer une topologie à partir des appareils existants
+          try {
+            await generateTopologyFromDevices()
+          } catch (fallbackError) {
+            console.error('[TOPOLOGY] Échec de la génération à partir des appareils:', fallbackError)
+            
+            // Si même ça échoue, lancer un scan complet
+            console.log('[TOPOLOGY] Lancement d\'un scan complet...')
+            await launchComprehensiveScan()
+          }
+        } else {
+          console.log('[TOPOLOGY] Aucun appareil trouvé, lancement d\'un scan complet...')
+          // Si aucun appareil, lancer un scan complet
+          await launchComprehensiveScan()
+        }
+      } else {
+        // Autre type d'erreur
+        setError('Erreur lors du chargement de la topologie: ' + (err.response?.data?.message || err.message))
+        
+        // En cas d'erreur, essayer quand même de générer une topologie basique
+        try {
+          await generateTopologyFromDevices()
+        } catch (fallbackError) {
+          console.error('[TOPOLOGY] Impossible de générer une topologie de secours:', fallbackError)
+        }
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  // Charger la topologie au montage
+  // Fonction pour vérifier rapidement si des appareils existent
+  const checkDevicesExist = async () => {
+    try {
+      const response = await axios.get('/api/network/devices')
+      return response.data && response.data.success && response.data.data && response.data.data.length > 0
+    } catch (err) {
+      console.error('[TOPOLOGY] Erreur lors de la vérification des appareils:', err)
+      return false
+    }
+  }
+
+  // Fonction pour lancer un scan complet et générer la topologie
+  const launchComprehensiveScan = async () => {
+    try {
+      console.log('[TOPOLOGY] Lancement d\'un scan complet pour générer la topologie...')
+      setError('Génération de la topologie en cours... (cela peut prendre quelques minutes)')
+      
+      // Vérifier d'abord si des appareils existent déjà
+      const devicesExist = await checkDevicesExist()
+      
+      if (devicesExist) {
+        console.log('[TOPOLOGY] Des appareils existent déjà, génération rapide...')
+        setError('Appareils détectés, génération de la topologie...')
+        
+        // Si des appareils existent, générer directement une topologie
+        await generateTopologyFromDevices()
+        return
+      }
+      
+      // Lancer un scan complet avec un timeout plus long
+      const scanResponse = await axios.get('/api/network/comprehensive-scan', {
+        timeout: 300000 // 5 minutes de timeout
+      })
+      
+      if (scanResponse.data && scanResponse.data.success) {
+        console.log('[TOPOLOGY] Scan complet terminé, rechargement de la topologie...')
+        setError('Scan terminé, récupération de la topologie...')
+        
+        // Attendre un peu pour que la topologie soit persistée
+        await new Promise(resolve => setTimeout(resolve, 3000))
+        
+        // Recharger la topologie
+        await fetchTopology()
+      } else {
+        throw new Error('Échec du scan complet: ' + (scanResponse.data?.message || 'Réponse invalide'))
+      }
+    } catch (err) {
+      console.error('[TOPOLOGY] Erreur lors du scan complet:', err)
+      
+      if (err.code === 'ECONNABORTED') {
+        setError('Le scan a pris trop de temps. Génération d\'une topologie basique...')
+      } else if (err.response?.status === 401) {
+        authService.logout()
+        window.location.href = '/login'
+        return
+      } else {
+        setError('Échec de la génération de la topologie. Utilisation d\'une topologie générée à partir des appareils...')
+      }
+      
+      // Fallback : générer une topologie à partir des appareils
+      try {
+        await generateTopologyFromDevices()
+      } catch (fallbackError) {
+        console.error('[TOPOLOGY] Échec du fallback:', fallbackError)
+        setError('Impossible de générer une topologie. Vérifiez votre connexion réseau.')
+      }
+    }
+  }
+
+  // Fonction pour générer une topologie à partir des appareils
+  const generateTopologyFromDevices = async () => {
+    try {
+      console.log('[TOPOLOGY] Génération d\'une topologie à partir des appareils...')
+      
+      // Récupérer les appareils
+      const devicesResponse = await axios.get('/api/network/devices')
+      
+      if (devicesResponse.data && devicesResponse.data.success && devicesResponse.data.data) {
+        const devices = devicesResponse.data.data
+        
+        if (devices.length === 0) {
+          console.log('[TOPOLOGY] Aucun appareil trouvé, lancement d\'un scan...')
+          // Si aucun appareil, lancer un scan rapide
+          await launchComprehensiveScan()
+          return
+        }
+        
+        console.log(`[TOPOLOGY] ${devices.length} appareils trouvés, génération de la topologie...`)
+        
+        // Créer des nœuds à partir des appareils
+        const nodes = devices.map(device => ({
+          id: device.id,
+          hostname: device.hostname || 'Non disponible',
+          ipAddress: device.ipAddress || 'Non disponible',
+          macAddress: device.macAddress || 'Non disponible',
+          os: device.os || 'Non disponible',
+          deviceType: (device.deviceType || 'other').toLowerCase(),
+          stats: {
+            status: device.stats?.status || 'inactive',
+            vlan: device.stats?.vlan || 'N/A',
+            bandwidth: device.stats?.bandwidth || 0,
+            cpuUsage: device.stats?.cpuUsage || 0,
+            memoryUsage: device.stats?.memoryUsage || 0
+          },
+          lastSeen: device.lastSeen || null,
+          firstDiscovered: device.firstDiscovered || null
+        }))
+        
+        // Créer des liens simples entre appareils (simulation)
+        const links = []
+        const networkDevices = nodes.filter(node => 
+          ['router', 'switch', 'ap'].includes(node.deviceType)
+        )
+        
+        // Connecter les équipements réseau entre eux
+        for (let i = 0; i < networkDevices.length; i++) {
+          for (let j = i + 1; j < networkDevices.length; j++) {
+            links.push({
+              source: networkDevices[i].id,
+              target: networkDevices[j].id,
+              type: 'LAN',
+              bandwidth: '1Gbps'
+            })
+          }
+        }
+        
+        // Connecter les appareils finaux aux équipements réseau les plus proches
+        const endDevices = nodes.filter(node => 
+          !['router', 'switch', 'ap'].includes(node.deviceType)
+        )
+        
+        endDevices.forEach(device => {
+          if (networkDevices.length > 0) {
+            // Connecter au premier équipement réseau disponible
+            links.push({
+              source: device.id,
+              target: networkDevices[0].id,
+              type: 'LAN',
+              bandwidth: '100Mbps'
+            })
+          } else if (endDevices.length > 1) {
+            // Si pas d'équipement réseau, connecter aux autres appareils
+            const otherDevices = endDevices.filter(d => d.id !== device.id)
+            if (otherDevices.length > 0) {
+              links.push({
+                source: device.id,
+                target: otherDevices[0].id,
+                type: 'LAN',
+                bandwidth: '100Mbps'
+              })
+            }
+          }
+        })
+        
+        const transformedData = {
+          nodes,
+          links,
+          stats: {
+            totalDevices: nodes.length,
+            activeDevices: nodes.filter(n => n.stats.status === 'active').length,
+            averageLatency: 0,
+            averagePacketLoss: 0,
+            totalBandwidth: { download: 0, upload: 0 }
+          }
+        }
+        
+        setNetworkData(transformedData)
+        filterNetworkData(selectedView)
+        console.log('[TOPOLOGY] Topologie générée à partir des appareils avec succès')
+        
+        // Afficher un message informatif
+        setError(null)
+        console.log(`[TOPOLOGY] Topologie générée : ${nodes.length} appareils, ${links.length} connexions`)
+      } else {
+        console.warn('[TOPOLOGY] Format de réponse inattendu pour les appareils:', devicesResponse.data)
+        throw new Error('Impossible de récupérer les appareils. Vérifiez votre connexion.')
+      }
+    } catch (err) {
+      console.error('[TOPOLOGY] Erreur lors de la génération de la topologie:', err)
+      
+      // Si on ne peut pas récupérer les appareils, c'est probablement un problème de connexion
+      if (err.response?.status === 401) {
+        authService.logout()
+        window.location.href = '/login'
+        return
+      }
+      
+      throw new Error('Erreur lors de la génération de la topologie: ' + (err.response?.data?.message || err.message))
+    }
+  }
+
+  // Initialisation de l'authentification et chargement de la topologie
   useEffect(() => {
-    fetchTopology()
+    const initializeAuth = async () => {
+      try {
+        const token = authService.getToken()
+        if (!token) {
+          console.log('Pas de token trouvé, redirection vers la page de connexion')
+          window.location.href = '/login'
+          return
+        }
+        
+        // Configuration du header d'authentification
+        authService.setAuthHeader(token)
+        
+        // Vérification que l'utilisateur est bien authentifié
+        const currentUser = authService.getCurrentUser()
+        
+        if (!currentUser || !currentUser.id) {
+          console.log('Utilisateur non valide, redirection vers la page de connexion')
+          authService.logout()
+          window.location.href = '/login'
+          return
+        }
+        
+        // Chargement de la topologie
+        await fetchTopology()
+      } catch (error) {
+        console.error('Erreur lors de l\'initialisation:', error)
+        if (error.message.includes('401') || error.message.includes('non autorisé')) {
+          authService.logout()
+          window.location.href = '/login'
+        }
+      }
+    }
+    
+    initializeAuth()
   }, [])
 
   // Fonction pour rafraîchir le graphe
   const refreshGraph = async () => {
     try {
       setLoading(true)
-      // Lancer un nouveau scan réseau
-      await axios.post('/api/network/scan', { target: '192.168.1.0/24' })
+      setError(null)
+      
+      // Vérification de l'authentification
+      const token = authService.getToken()
+      if (!token) {
+        throw new Error('Non authentifié')
+      }
+      
+      // Configuration du header d'authentification
+      authService.setAuthHeader(token)
+      
+      console.log('[TOPOLOGY] Lancement d\'un nouveau scan réseau...')
+      
+      // Lancer un nouveau scan réseau complet
+      await axios.get('/api/network/comprehensive-scan')
+      
+      console.log('[TOPOLOGY] Scan terminé, rechargement de la topologie...')
+      
       // Recharger la topologie
       await fetchTopology()
+      
       // Réinitialiser la simulation
       if (simulation) {
         simulation.stop()
       }
+      
       // Réinitialiser le zoom
       if (zoomBehaviorRef.current) {
         d3.select(svgRef.current)
@@ -256,7 +570,13 @@ const Topology = () => {
           .call(zoomBehaviorRef.current.transform, d3.zoomIdentity)
       }
     } catch (err) {
-      setError('Erreur lors du rafraîchissement: ' + err.message)
+      console.error('[TOPOLOGY] Erreur lors du rafraîchissement:', err)
+      if (err.response?.status === 401) {
+        authService.logout()
+        window.location.href = '/login'
+      } else {
+        setError('Erreur lors du rafraîchissement: ' + (err.response?.data?.message || err.message))
+      }
     } finally {
       setLoading(false)
     }
@@ -289,14 +609,6 @@ const Topology = () => {
         )
     }
   }
-
-  // Simuler le chargement des donnees
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setLoading(false)
-    }, 1000)
-    return () => clearTimeout(timer)
-  }, [])
 
   // Fonction pour obtenir la couleur de statut basée sur les variables CSS
   const getStatusColor = (status) => {
@@ -707,6 +1019,26 @@ const Topology = () => {
                     <CIcon icon={cilReload} />
                   </CButton>
                 </CTooltip>
+                <CTooltip content="Générer une topologie à partir des appareils">
+                  <CButton 
+                    color="info" 
+                    variant="outline" 
+                    onClick={generateTopologyFromDevices}
+                    disabled={loading}
+                  >
+                    <CIcon icon={cilDevices} />
+                  </CButton>
+                </CTooltip>
+                <CTooltip content="Générer une topologie complète (scan réseau)">
+                  <CButton 
+                    color="success" 
+                    variant="outline" 
+                    onClick={launchComprehensiveScan}
+                    disabled={loading}
+                  >
+                    <CIcon icon={cilSignalCellular4} />
+                  </CButton>
+                </CTooltip>
                 <CTooltip content="Plein écran">
                   <CButton
                     color="primary"
@@ -845,6 +1177,12 @@ const Topology = () => {
               )}
             </CCol>
           </CRow>
+
+          {error && (
+            <CAlert color="danger" dismissible onClose={() => setError(null)} className="mb-3">
+              <strong>Erreur :</strong> {error}
+            </CAlert>
+          )}
 
           {loading ? (
             <div className="text-center py-5">

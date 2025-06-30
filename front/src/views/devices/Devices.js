@@ -124,7 +124,15 @@ const Devices = () => {
 
       const response = await axios.get('/api/network/devices')
       
-      setDevices(response.data)
+      // Correction : accéder à response.data.data au lieu de response.data
+      // car le backend retourne { success: true, data: [...], count: ... }
+      if (response.data && response.data.success && Array.isArray(response.data.data)) {
+        setDevices(response.data.data)
+        console.log(`[FRONTEND] ${response.data.count} appareils récupérés avec succès`)
+      } else {
+        console.warn('[FRONTEND] Format de réponse inattendu:', response.data)
+        setDevices([])
+      }
       setError(null)
     } catch (err) {
       console.error('Erreur detaillee:', err)
@@ -285,6 +293,49 @@ const Devices = () => {
     }
   }
 
+  // Fonction de débogage pour diagnostiquer le problème
+  const handleDebug = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      const token = authService.getToken()
+      if (!token) {
+        throw new Error('Non authentifié')
+      }
+      
+      authService.setAuthHeader(token)
+      
+      console.log('[FRONTEND] Test de débogage des appareils...')
+      const response = await axios.get('/api/network/devices/debug')
+      
+      if (response.data && response.data.success) {
+        const debugInfo = response.data.data
+        console.log('[FRONTEND] Informations de débogage:', debugInfo)
+        
+        const message = `📊 Diagnostic: ${debugInfo.summary.totalCount} appareils totaux (${debugInfo.summary.activeCount} actifs, ${debugInfo.summary.inactiveCount} inactifs)`
+        setToast({ show: true, message, color: 'info' })
+        
+        // Si il y a des appareils inactifs, les afficher dans la console
+        if (debugInfo.inactive && debugInfo.inactive.length > 0) {
+          console.log('[FRONTEND] Appareils inactifs:', debugInfo.inactive)
+        }
+        
+        // Si il y a des appareils actifs, les afficher dans la console
+        if (debugInfo.active && debugInfo.active.length > 0) {
+          console.log('[FRONTEND] Appareils actifs:', debugInfo.active)
+        }
+      } else {
+        throw new Error('Format de réponse inattendu')
+      }
+    } catch (err) {
+      console.error('[FRONTEND] Erreur débogage:', err.message)
+      setError('Erreur lors du débogage: ' + (err.response?.data?.message || err.message))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // Fonction de scan complet intégrée (nmap + routeur + topologie + statistiques)
   const handleScan = async () => {
     try {
@@ -309,8 +360,8 @@ const Devices = () => {
         throw new Error('Impossible de détecter le réseau automatiquement')
       }
 
-      const { startIP, endIP } = networkResponse.data.network
-      console.log('[FRONTEND] Réseau détecté:', `${startIP}-${endIP}`)
+      const { cidr, localIP, gateway } = networkResponse.data.network
+      console.log('[FRONTEND] Réseau détecté:', `${cidr} (IP locale: ${localIP}, Gateway: ${gateway})`)
 
       // 2. Scan complet (routeur + nmap)
       console.log('[FRONTEND] Démarrage du scan complet...')
@@ -476,6 +527,19 @@ const Devices = () => {
                     <CIcon icon={cilReload} className="me-2" />
                   )}
                   Rafraichir
+                </CButton>
+              </CTooltip>
+              
+              <CTooltip content="Diagnostiquer le problème de récupération">
+                <CButton 
+                  color="info" 
+                  onClick={handleDebug}
+                  disabled={loading}
+                  style={{ borderRadius: "30px" }}
+                  className="ms-2"
+                >
+                  <CIcon icon={cilInfo} className="me-2" />
+                  Debug
                 </CButton>
               </CTooltip>
             </CCol>
@@ -724,6 +788,21 @@ const Devices = () => {
         }
       `}</style>
 
+      {/* Toast pour les notifications */}
+      <CToaster ref={toasterRef} placement="top-end">
+        {toast.show && (
+          <CToast
+            visible={toast.show}
+            color={toast.color}
+            onClose={() => setToast({ show: false, message: '', color: 'success' })}
+            delay={5000}
+          >
+            <CToastBody>
+              {toast.message}
+            </CToastBody>
+          </CToast>
+        )}
+      </CToaster>
     </>
   )
 }

@@ -21,7 +21,7 @@ interface NetworkStats {
 
 interface SNMPConfig {
   community: string
-  version: "1" | "2c"
+  version: "1" | "2c" | "2"
   timeout: number
   retries: number
 }
@@ -41,7 +41,7 @@ export class NmapAgentService {
   private readonly logger = new Logger(NmapAgentService.name)
   private readonly snmpConfig: SNMPConfig = {
     community: "public",
-    version: "2c",
+    version: "2",
     timeout: 5000,
     retries: 1,
   }

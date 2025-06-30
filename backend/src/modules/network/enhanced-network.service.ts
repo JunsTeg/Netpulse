@@ -40,6 +40,26 @@ interface EnhancedScanResult {
   error?: string
 }
 
+export interface EnhancedDevice extends Device {
+  zabbixData?: {
+    hostId?: string;
+    hostName?: string;
+    status?: 'enabled' | 'disabled';
+    available?: number;
+    metrics?: {
+      cpu: number;
+      memory: number;
+      disk: number;
+      network: number;
+    };
+  };
+  unifiedHealth?: {
+    score: number;
+    status: 'healthy' | 'warning' | 'critical';
+    lastUpdate: Date;
+  };
+}
+
 @Injectable()
 export class EnhancedNetworkService extends NetworkService {
   private readonly enhancedLogger = new Logger(EnhancedNetworkService.name)

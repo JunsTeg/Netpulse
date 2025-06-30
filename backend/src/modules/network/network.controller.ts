@@ -106,6 +106,32 @@ export class NetworkController {
     }
   }
 
+  @Get("devices/debug")
+  async getDevicesDebug(@Req() req: RequestWithUser) {
+    try {
+      this.logger.log(`[CONTROLLER] Récupération debug des appareils demandée par l'utilisateur ${req.user?.id || 'inconnu'}`)
+      const debugInfo = await this.appareilRepository.findAllDevicesDebug()
+      
+      return {
+        success: true,
+        data: {
+          active: debugInfo.active,
+          inactive: debugInfo.inactive,
+          total: debugInfo.total,
+          summary: {
+            activeCount: debugInfo.active.length,
+            inactiveCount: debugInfo.inactive.length,
+            totalCount: debugInfo.total
+          }
+        },
+        count: debugInfo.total,
+      }
+    } catch (error) {
+      this.logger.error(`[CONTROLLER] Erreur récupération debug appareils: ${error.message}`)
+      throw new HttpException("Erreur lors de la récupération debug des appareils", HttpStatus.INTERNAL_SERVER_ERROR)
+    }
+  }
+
   @Get("topology")
   async getTopology(@Req() req: RequestWithUser) {
     try {

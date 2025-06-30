@@ -178,11 +178,16 @@ export class AppareilRepository {
 
   async findAllDevices(): Promise<Device[]> {
     try {
+      this.logger.log('[FIND ALL] Début de la récupération des appareils actifs')
+      
       const results = await sequelize.query<any>(
         `SELECT * FROM appareils`,
         { type: QueryTypes.SELECT }
       )
-      return results.map(d => ({
+      
+      this.logger.log(`[FIND ALL] ${results.length} appareils actifs trouvés dans la base de données`)
+      
+      const devices = results.map(d => ({
         ...d,
         stats: (() => {
           try {
@@ -197,9 +202,58 @@ export class AppareilRepository {
         lastSeen: d.lastSeen ? new Date(d.lastSeen) : new Date(),
         firstDiscovered: d.firstDiscovered ? new Date(d.firstDiscovered) : new Date(),
       }) as Device)
+      
+      this.logger.log(`[FIND ALL] ${devices.length} appareils traités et retournés`)
+      return devices
     } catch (error) {
       this.logger.error(`[FIND ALL] Erreur récupération appareils: ${error.message}`)
       return []
+    }
+  }
+
+  /**
+   * Méthode de débogage pour récupérer tous les appareils (actifs et inactifs)
+   */
+  async findAllDevicesDebug(): Promise<{ active: Device[], inactive: Device[], total: number }> {
+    try {
+      this.logger.log('[FIND ALL DEBUG] Début de la récupération de tous les appareils')
+      
+      const allResults = await sequelize.query<any>(
+        `SELECT *, isActive FROM appareils ORDER BY lastSeen DESC`,
+        { type: QueryTypes.SELECT }
+      )
+      
+      this.logger.log(`[FIND ALL DEBUG] ${allResults.length} appareils totaux trouvés dans la base de données`)
+      
+      const activeDevices = allResults.filter(d => d.isActive === true || d.isActive === 1)
+      const inactiveDevices = allResults.filter(d => d.isActive === false || d.isActive === 0)
+      
+      this.logger.log(`[FIND ALL DEBUG] ${activeDevices.length} appareils actifs, ${inactiveDevices.length} appareils inactifs`)
+      
+      const processDevice = (d: any): Device => ({
+        ...d,
+        stats: (() => {
+          try {
+            if (typeof d.stats === 'string') return JSON.parse(d.stats)
+            if (typeof d.stats === 'object' && d.stats !== null) return d.stats
+            return { cpu: 0, memory: 0, uptime: "0", status: "inactive", services: [] }
+          } catch {
+            return { cpu: 0, memory: 0, uptime: "0", status: "inactive", services: [] }
+          }
+        })(),
+        sources: d.sources ? (Array.isArray(d.sources) ? d.sources : [d.sources]) : ["inconnu"],
+        lastSeen: d.lastSeen ? new Date(d.lastSeen) : new Date(),
+        firstDiscovered: d.firstDiscovered ? new Date(d.firstDiscovered) : new Date(),
+      }) as Device
+      
+      return {
+        active: activeDevices.map(processDevice),
+        inactive: inactiveDevices.map(processDevice),
+        total: allResults.length
+      }
+    } catch (error) {
+      this.logger.error(`[FIND ALL DEBUG] Erreur récupération appareils: ${error.message}`)
+      return { active: [], inactive: [], total: 0 }
     }
   }
 } 
