@@ -1,131 +1,188 @@
 🚨 NetPulse — Système de Surveillance Réseau en Temps Réel
-NetPulse est une application full-stack conçue pour surveiller, analyser et visualiser en temps réel l'état d'un réseau informatique. Ce projet combine un backend Node.js (Express + TypeScript) et un frontend React (avec TailwindCSS et Chart.js) dans une architecture monorepo simple et maintenable.
+
+NetPulse est une application full-stack conçue pour surveiller, 
+analyser et visualiser en temps réel l'état d'un réseau informatique. 
+Ce projet combine un backend NestJS (TypeScript) et un frontend React (CoreUI) 
+dans une architecture modulaire et maintenable.
 
 📁 Structure du projet
-bash
-Copier
-Modifier
+```
 netpulse/
-├── backend/               # API REST + WebSocket + collecte réseau
+├── backend/               # API REST + WebSocket + collecte réseau (NestJS)
 │   ├── src/
-│   ├── .env
+│   │   ├── modules/
+│   │   │   ├── agents/    # Agents de surveillance réseau
+│   │   │   ├── auth/      # Authentification JWT
+│   │   │   ├── network/   # Services réseau (nmap, traceroute, etc.)
+│   │   │   ├── surveillance/ # Alertes et seuils
+│   │   │   └── logs/      # Gestion des logs
+│   │   ├── config/        # Configuration de l'application
+│   │   └── utils/         # Utilitaires
+│   ├── dockerfile
 │   ├── package.json
 │   └── tsconfig.json
-├── frontend/              # Interface utilisateur React
+├── front/                 # Interface utilisateur React (CoreUI)
 │   ├── src/
+│   │   ├── components/    # Composants réutilisables
+│   │   ├── views/         # Pages de l'application
+│   │   ├── services/      # Services API
+│   │   └── hooks/         # Hooks personnalisés
 │   ├── public/
-│   ├── .env
 │   ├── package.json
-│   └── tailwind.config.js
-├── docker-compose.yml     # Conteneurisation (frontend + backend + MongoDB)
-├── README.md              # Ce fichier
-└── .github/workflows/     # Intégration continue (facultatif)
+│   └── vite.config.mjs
+├── mysql/                 # Configuration et migrations MySQL
+│   ├── conf.d/
+│   ├── init/
+│   └── migrations/
+├── docker-compose.yml     # Conteneurisation (MySQL + phpMyAdmin)
+├── package.json           # Scripts de développement
+└── README                 # Ce fichier
+```
+
 ⚙️ Installation (en local)
-1. Cloner le projet
-bash
-Copier
-Modifier
+
+1. **Cloner le projet**
+```bash
 git clone https://github.com/Juntegs/netpulse.git
 cd netpulse
-2. Lancer le backend
-bash
-Copier
-Modifier
+```
+
+2. **Configurer l'environnement**
+```bash
+# Créer le fichier .env à la racine
+cp .env.example .env
+# Configurer les variables d'environnement (MySQL, JWT, etc.)
+```
+
+3. **Lancer la base de données**
+```bash
+docker-compose up -d mysql phpmyadmin
+```
+
+4. **Installer et lancer le backend**
+```bash
 cd backend
 npm install
-cp .env.example .env
-npm run dev
-3. Lancer le frontend
-bash
-Copier
-Modifier
-cd ../frontend
+npm run start:dev
+```
+
+5. **Installer et lancer le frontend**
+```bash
+cd ../front
 npm install
-cp .env.example .env
 npm start
-4. Scripts utiles à la racine
-bash
-Copier
-Modifier
+```
+
+6. **Scripts utiles à la racine**
+```bash
 npm run dev           # Lance frontend + backend en parallèle
 npm run dev:frontend  # Lance seulement le frontend
 npm run dev:backend   # Lance seulement le backend
+npm run build         # Build production frontend + backend
+```
+
 🧪 Tests de base après installation
-Accédez à http://localhost:3000
 
-Vérifiez que les composants graphiques affichent les données simulées
+- **Frontend** : Accédez à http://localhost:3000
+- **Backend API** : http://localhost:3001
+- **phpMyAdmin** : http://localhost:8080
 
-Testez la communication en temps réel :
+Vérifiez que :
+- Les composants graphiques affichent les données simulées
+- La communication en temps réel fonctionne via WebSocket
+- Les métriques apparaissent dans les graphiques
+- Les alertes se déclenchent lors du dépassement de seuils
 
-Des métriques doivent apparaître dans les graphiques
+🐳 Docker
 
-Une alerte apparaît si un seuil est dépassé (trafic, latence, etc.)
-
-Vérifiez les logs dans le terminal backend pour le trafic émis
-
-🐳 Docker (optionnel)
-Lancement via Docker Compose
-bash
-Copier
-Modifier
+**Lancement complet via Docker Compose**
+```bash
 docker-compose up --build
+```
+
 Cela va lancer :
-
-Le backend sur http://localhost:5000
-
-Le frontend sur http://localhost:3000
-
-MongoDB sur mongodb://localhost:27017
+- MySQL sur `localhost:3306`
+- phpMyAdmin sur `http://localhost:8080`
+- Le backend NestJS sur `http://localhost:3001`
+- Le frontend React sur `http://localhost:3000`
 
 🌐 Technologies
-Backend
-Express.js + TypeScript
 
-Socket.IO
+**Backend (NestJS)**
+- NestJS + TypeScript
+- Socket.IO pour la communication temps réel
+- MySQL avec Sequelize ORM
+- JWT pour l'authentification
+- Modules : agents, auth, network, surveillance, logs
 
-MongoDB / InfluxDB
+**Frontend (React)**
+- React 19 + Vite
+- CoreUI 5 (interface admin)
+- Chart.js + react-chartjs-2
+- Axios pour les requêtes API
+- Socket.IO client
 
-pcap, netstat, nmap
-
-Frontend
-React.js + Vite
-
-TailwindCSS
-
-Chart.js / react-chartjs-2
-
-Axios + socket.io-client
+**Base de données**
+- MySQL 8.0
+- phpMyAdmin pour la gestion
 
 📊 Fonctionnalités principales
-🔴 Surveillance réseau en temps réel
 
-📉 Visualisation graphique dynamique
+🔴 **Surveillance réseau en temps réel**
+- Détection automatique des appareils connectés
+- Monitoring des métriques réseau (trafic, latence, etc.)
+- Agents spécialisés (nmap, traceroute, netstat)
 
-⚠️ Alertes sur seuils de trafic ou comportement anormal
+📉 **Visualisation graphique dynamique**
+- Tableaux de bord interactifs
+- Graphiques en temps réel
+- Topologie réseau
 
-📡 Détection des appareils connectés
+⚠️ **Système d'alertes**
+- Seuils configurables
+- Détection d'anomalies
+- Notifications en temps réel
 
-🔒 Authentification JWT (optionnelle)
+🔒 **Authentification sécurisée**
+- JWT tokens
+- Gestion des utilisateurs
+- Rôles et permissions
 
-📁 Architecture modulaire prête pour CI/CD
+📡 **Agents de surveillance**
+- Nmap pour la découverte réseau
+- Traceroute pour l'analyse des routes
+- Netstat pour les connexions actives
+- Détection d'anomalies
 
 🧑‍💻 Démo de soutenance
-Prévoir un scénario de test avec simulation de trafic réseau (ping, iperf, etc.)
 
-Déclencher une alerte et visualiser sa réception côté frontend
+**Scénario de test recommandé :**
+1. Simulation de trafic réseau (ping, iperf, etc.)
+2. Déclenchement d'une alerte et visualisation côté frontend
+3. Présentation des modules techniques (agents, surveillance, etc.)
+4. Démonstration de la détection d'appareils en temps réel
 
-Présenter les composants techniques dans un support (Slides, Figma, PDF)
+**Support de présentation :**
+- Slides techniques (architecture, modules)
+- Maquettes UI/UX (Figma)
+- Documentation API (Postman)
 
-✍️ Auteur
-Projet de soutenance — Génie Logiciel & Architecture Réseaux
-Développé par : Groupe 83
-Promo : 2025
-Université / École : IUT de Douala
-✅ À faire encore
- Authentification JWT sécurisée
 
- Dashboard admin avec filtres personnalisés
+✅ **Fonctionnalités implémentées**
 
- Intégration CI/CD GitHub Actions
+✅ Authentification JWT sécurisée
+✅ Dashboard admin avec CoreUI
+✅ Modules modulaires (agents, network, surveillance)
+✅ Base de données MySQL avec migrations
+✅ Communication WebSocket temps réel
+✅ Agents de surveillance réseau (nmap, traceroute, netstat)
+✅ Système d'alertes et seuils
+✅ Interface utilisateur moderne et responsive
 
- Export CSV / PDF des métriques
+🔄 **À améliorer**
+
+- Intégration CI/CD GitHub Actions
+- Export CSV/PDF des métriques
+- Tests unitaires et d'intégration
+- Documentation API complète
+- Monitoring des performances
