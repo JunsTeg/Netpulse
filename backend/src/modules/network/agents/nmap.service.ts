@@ -8,6 +8,35 @@ import * as snmp from "net-snmp"
 import { sequelize } from "../../../database"
 import { QueryTypes } from "sequelize"
 import { AppareilRepository } from "../appareil.repository"
+import * as path from "path"
+import * as fs from "fs"
+// Ajout des utilitaires IP
+// Supprimer l'import ipaddr.js
+// Ajouter la fonction utilitaire IPv4 CIDR
+// --- Ajout: Chargement du fichier oui-db.json ---
+const ouiDbPath = path.resolve(__dirname, '../../../utils/oui-db.json')
+let ouiDb: Record<string, string> = {}
+try {
+  const ouiRaw = fs.readFileSync(ouiDbPath, 'utf-8')
+  ouiDb = JSON.parse(ouiRaw)
+} catch (err) {
+  // Si le fichier n'est pas trouvé ou mal formé, on log l'erreur
+  // et on continue avec une base vide
+  console.error('[OUI] Erreur chargement oui-db.json:', err.message)
+  ouiDb = {}
+}
+// Supprimer l'import ipaddr.js
+// Ajouter la fonction utilitaire IPv4 CIDR
+function ipToInt(ip: string): number {
+  return ip.split('.').reduce((acc, octet) => (acc << 8) + Number(octet), 0)
+}
+function isIPv4InCIDR(ip: string, cidr: string): boolean {
+  const [range, bits] = cidr.split('/')
+  const ipNum = ipToInt(ip)
+  const rangeNum = ipToInt(range)
+  const mask = ~(2 ** (32 - Number(bits)) - 1)
+  return (ipNum & mask) === (rangeNum & mask)
+}
 
 const execAsync = promisify(exec)
 
@@ -35,6 +64,9 @@ declare module "net-snmp" {
     close(): void
   }
 }
+
+// Ajout d'un cache en mémoire pour retenir la communauté SNMP fonctionnelle par IP
+const snmpCommunityCache: { [ip: string]: string } = {}
 
 @Injectable()
 export class NmapAgentService {
@@ -98,6 +130,15 @@ export class NmapAgentService {
       for (const device of savedDevices) {
         try {
           const networkStats = await this.collectNetworkStatsWithSNMP(device.ipAddress)
+          // Propagation du message d'erreur dans Device.stats
+          device.stats = {
+            ...device.stats,
+            cpu: networkStats.cpuUsage ?? 0,
+            memory: networkStats.memoryUsage ?? 0,
+            bandwidth: typeof networkStats.bandwidth === 'object' ? networkStats.bandwidth : { download: networkStats.bandwidth ?? 0, upload: 0 },
+            latency: networkStats.latency ?? 0,
+            lastStatsError: networkStats.lastStatsError,
+          }
           await this.saveNetworkStats(device.id, networkStats)
           await this.logAction(actionId, userId, "device_stats_collected", `Stats collectées pour ${device.ipAddress}`)
           await this.saveScanLogs(device)
@@ -224,7 +265,7 @@ export class NmapAgentService {
         this.logger.warn(`[SCAN] Stderr nmap: ${stderr}`)
       }
       
-      let devices = this.parseNmapOutput(stdout)
+      let devices = this.parseNmapOutput(stdout, network)
       this.logger.log(`[SCAN] Appareils trouvés après scan ping: ${devices.length}`)
       
       // Si peu d'appareils trouvés, essayer un scan de ports
@@ -317,7 +358,7 @@ export class NmapAgentService {
             const { stdout } = await execAsync(`arp -a ${ip}`)
             const macMatch = stdout.match(/([0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2})/i)
             
-            if (macMatch && !this.isLocalhost(ip)) {
+            if (macMatch && this.isValidDeviceIP(ip, network)) {
               this.logger.log(`[SCAN] Appareil trouvé par ARP: ${ip} (MAC: ${macMatch[1]})`)
               devices.push({
                 id: uuidv4(),
@@ -343,7 +384,7 @@ export class NmapAgentService {
             const { stdout } = await execAsync(`arp -n ${ip}`)
             const macMatch = stdout.match(/([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})/i)
             
-            if (macMatch && !this.isLocalhost(ip)) {
+            if (macMatch && this.isValidDeviceIP(ip, network)) {
               this.logger.log(`[SCAN] Appareil trouvé par ARP: ${ip} (MAC: ${macMatch[1]})`)
               devices.push({
                 id: uuidv4(),
@@ -378,37 +419,55 @@ export class NmapAgentService {
     }
   }
 
-  private async enrichBasicInfo(devices: Device[]): Promise<Device[]> {
+  public async enrichBasicInfo(devices: Device[]): Promise<Device[]> {
+    // --- Remplacer la logique OUI par la fonction locale ---
     const enrichedDevices = await Promise.all(
       devices.map(async (device) => {
         try {
-          // Recuperation de l'adresse MAC
-          const macAddress = await this.getMACAddress(device.ipAddress)
-
-          // Detection du type d'appareil basée sur MAC
-          const deviceType = this.detectDeviceType(macAddress)
-
-          // Recuperation du hostname
-          const hostname = await this.getHostname(device.ipAddress)
-
-          // Creation d'un objet Device conforme au schema
+          // 1. MAC address (ARP)
+          let macAddress = device.macAddress
+          if (!macAddress) {
+            const mac = await this.getMACAddress(device.ipAddress)
+            if (mac) {
+              macAddress = mac
+              this.logger.debug(`[ENRICH] MAC enrichi via ARP pour ${device.ipAddress}: ${mac}`)
+            }
+          }
+          // 2. Hostname (DNS)
+          let hostname = device.hostname
+          if (!hostname || hostname === device.ipAddress) {
+            const dnsName = await this.getHostname(device.ipAddress)
+            if (dnsName && dnsName !== device.ipAddress) {
+              hostname = dnsName
+              this.logger.debug(`[ENRICH] Hostname enrichi via DNS pour ${device.ipAddress}: ${dnsName}`)
+            }
+          }
+          // 3. OS (Nmap)
+          let os = device.os
+          if (!os || os === 'Unknown') {
+            os = await this.getOSFromNmap(device.ipAddress) || os
+            if (os && os !== 'Unknown') {
+              this.logger.debug(`[ENRICH] OS enrichi via Nmap pour ${device.ipAddress}: ${os}`)
+            }
+          }
+          // 4. Type d'appareil via OUI
+          let deviceType = device.deviceType
+          if (macAddress) {
+            const ouiType = getDeviceTypeFromMacLocal(macAddress)
+            if (ouiType) {
+              deviceType = this.mapStringToDeviceType(ouiType)
+            }
+          }
+          // 5. Fusion intelligente
           const enrichedDevice: Device = {
             ...device,
-            hostname,
-            macAddress,
-            deviceType,
-            os: "Unknown", // Par defaut
-            stats: {
-              cpu: 0,
-              memory: 0,
-              uptime: "0",
-              status: DeviceStatus.ACTIVE,
-              services: [],
-            },
+            hostname: hostname || device.hostname,
+            macAddress: macAddress || device.macAddress,
+            os: os || device.os,
+            deviceType: deviceType || device.deviceType,
             lastSeen: new Date(),
-            firstDiscovered: new Date(),
+            firstDiscovered: device.firstDiscovered || new Date(),
           }
-
           return enrichedDevice
         } catch (error) {
           this.logger.error(`[SCAN] Erreur enrichissement info ${device.ipAddress}: ${error.message}`)
@@ -416,7 +475,6 @@ export class NmapAgentService {
         }
       }),
     )
-
     return enrichedDevices
   }
 
@@ -470,7 +528,7 @@ export class NmapAgentService {
     return DeviceType.OTHER
   }
 
-  private parseNmapOutput(stdout: string): Device[] {
+  private parseNmapOutput(stdout: string, cidr: string): Device[] {
     const devices: Device[] = []
     const lines = stdout.split("\n")
     
@@ -483,8 +541,8 @@ export class NmapAgentService {
       if (ipMatch) {
         const ip = ipMatch[1]
         
-        // Vérification que ce n'est pas localhost
-        if (!this.isLocalhost(ip)) {
+        // Vérification que ce n'est pas localhost ni broadcast
+        if (this.isValidDeviceIP(ip, cidr)) {
           this.logger.log(`[SCAN] IP trouvée: ${ip}`)
           
           // Recherche d'informations supplémentaires dans la ligne
@@ -531,6 +589,50 @@ export class NmapAgentService {
     return ip === "127.0.0.1" || ip === "::1" || ip === this.getLocalIP()
   }
 
+  // Ajout des fonctions utilitaires pour le filtrage
+  private isMulticast(ip: string): boolean {
+    const first = Number(ip.split('.')[0])
+    return first >= 224 && first <= 239
+  }
+
+  private isAPIPA(ip: string): boolean {
+    return ip.startsWith("169.254.")
+  }
+
+  private isInCIDR(ip: string, cidr: string): boolean {
+    // Utilise la fonction maison IPv4
+    return isIPv4InCIDR(ip, cidr)
+  }
+
+  private isBroadcast(ip: string, cidr?: string): boolean {
+    const parts = ip.split('.')
+    if (parts.length === 4 && parts[3] === '255') return true
+    if (ip === '255.255.255.255' || ip === '0.0.0.0') return true
+    if (cidr) {
+      try {
+        const [base, mask] = cidr.split('/')
+        const baseParts = base.split('.').map(Number)
+        const maskNum = parseInt(mask, 10)
+        if (maskNum >= 24 && parts.length === 4) {
+          const broadcast = [...baseParts]
+          broadcast[3] = 255
+          if (ip === broadcast.join('.')) return true
+        }
+      } catch {}
+    }
+    return false
+  }
+
+  private isValidDeviceIP(ip: string, cidr: string): boolean {
+    return (
+      !this.isLocalhost(ip) &&
+      !this.isBroadcast(ip, cidr) &&
+      !this.isMulticast(ip) &&
+      !this.isAPIPA(ip) &&
+      this.isInCIDR(ip, cidr)
+    )
+  }
+
   private getLocalIP(): string {
     const interfaces = os.networkInterfaces()
     for (const name of Object.keys(interfaces)) {
@@ -543,76 +645,68 @@ export class NmapAgentService {
     return "127.0.0.1"
   }
 
-  public async collectNetworkStatsWithSNMP(ip: string): Promise<NetworkStats> {
-    try {
-      // Tentative de collecte SNMP
-      const session = snmp.createSession(ip, this.snmpConfig.community, {
-        version: this.snmpConfig.version,
-        timeout: this.snmpConfig.timeout,
-        retries: this.snmpConfig.retries,
-      })
-
-      const oids = [
-        "1.3.6.1.2.1.25.3.3.1.2.1", // CPU usage
-        "1.3.6.1.2.1.25.2.3.1.6.1", // Memory usage
-        "1.3.6.1.2.1.2.2.1.10.1", // Interface in octets
-        "1.3.6.1.2.1.2.2.1.16.1", // Interface out octets
-      ]
-
-      return new Promise(async (resolve) => {
-        session.get(oids, async (error, varbinds) => {
-          session.close()
-
-          if (error) {
-            // Fallback sur ping si SNMP echoue
-            this.logger.log(`[SNMP] SNMP indisponible pour ${ip}, fallback ping utilisé: ${error.message}`)
-            try {
-              const stats = await this.collectNetworkStats(ip)
-              resolve(stats)
-            } catch (err) {
-              this.logger.log(`[SNMP] Fallback ping aussi indisponible pour ${ip}: ${err.message}`)
-              resolve({
-                bandwidth: 0,
-                latency: 0,
-                packetLoss: 100,
-                cpuUsage: 0,
-                memoryUsage: 0,
-              })
-            }
-            return
-          }
-
-          // Traitement des resultats SNMP
-          const [cpu, memory, inOctets, outOctets] = varbinds.map((v) => v.value)
-
-          // Mesure de la latence en complement
-          const { stdout: pingOutput } = await execAsync(`ping -n 1 ${ip}`)
-          const latency = this.parsePingLatency(pingOutput)
-          const packetLoss = this.parsePingPacketLoss(pingOutput)
-
-          resolve({
-            cpuUsage: cpu || 0,
-            memoryUsage: memory || 0,
-            bandwidth: inOctets + outOctets || 0,
-            latency,
-            packetLoss,
+  public async collectNetworkStatsWithSNMP(ip: string): Promise<NetworkStats & { lastStatsError?: string }> {
+    // Liste des communautés à tester
+    const communities = snmpCommunityCache[ip]
+      ? [snmpCommunityCache[ip], "public", "private", "community", "public1"]
+      : ["public", "private", "community", "public1"]
+    let lastError = ""
+    for (const community of communities) {
+      try {
+        const session = snmp.createSession(ip, community, {
+          version: this.snmpConfig.version,
+          timeout: this.snmpConfig.timeout,
+          retries: this.snmpConfig.retries,
+        })
+        const oids = [
+          "1.3.6.1.2.1.25.3.3.1.2.1", // CPU usage
+          "1.3.6.1.2.1.25.2.3.1.6.1", // Memory usage
+          "1.3.6.1.2.1.2.2.1.10.1", // Interface in octets
+          "1.3.6.1.2.1.2.2.1.16.1", // Interface out octets
+        ]
+        // Promisify SNMP get
+        const snmpGet = () => new Promise<any[]>((resolve, reject) => {
+          session.get(oids, (error, varbinds) => {
+            session.close()
+            if (error) reject(error)
+            else resolve(varbinds)
           })
         })
-      })
-    } catch (error) {
-      this.logger.log(`[SNMP] Exception SNMP pour ${ip}, fallback ping utilisé: ${error.message}`)
-      // Fallback sur la methode ping
-      try {
-        return await this.collectNetworkStats(ip)
-      } catch (err) {
-        this.logger.log(`[SNMP] Fallback ping aussi indisponible pour ${ip}: ${err.message}`)
+        const varbinds = await snmpGet()
+        // Si on arrive ici, la communauté fonctionne
+        snmpCommunityCache[ip] = community
+        const [cpu, memory, inOctets, outOctets] = varbinds.map((v) => v.value)
+        // Mesure de la latence en complément
+        const { stdout: pingOutput } = await execAsync(`ping -n 1 ${ip}`)
+        const latency = this.parsePingLatency(pingOutput)
+        const packetLoss = this.parsePingPacketLoss(pingOutput)
         return {
-          bandwidth: 0,
-          latency: 0,
-          packetLoss: 100,
-          cpuUsage: 0,
-          memoryUsage: 0,
+          cpuUsage: cpu || 0,
+          memoryUsage: memory || 0,
+          bandwidth: inOctets + outOctets || 0,
+          latency,
+          packetLoss,
+          lastStatsError: undefined,
         }
+      } catch (error) {
+        lastError = error.message
+        continue
+      }
+    }
+    // Si aucune communauté ne fonctionne, fallback ping
+    this.logger.log(`[SNMP] SNMP indisponible pour ${ip} (testé: ${communities.join(", ")}), fallback ping utilisé: ${lastError}`)
+    try {
+      const stats = await this.collectNetworkStats(ip)
+      return { ...stats, lastStatsError: `[SNMP] ${lastError}` }
+    } catch (err) {
+      this.logger.log(`[SNMP] Fallback ping aussi indisponible pour ${ip}: ${err.message}`)
+      return {
+        bandwidth: 0,
+        latency: 0,
+        packetLoss: 100,
+        cpuUsage: 0,
+        memoryUsage: 0,
+        lastStatsError: `[SNMP+PING] ${lastError} / ${err.message}`,
       }
     }
   }
@@ -834,7 +928,7 @@ export class NmapAgentService {
       const ipMatch = line.match(/Nmap scan report for ([^\s]+)/)
       if (ipMatch) {
         // Sauvegarder l'appareil précédent s'il existe
-        if (currentIP && !this.isLocalhost(currentIP)) {
+        if (currentIP && this.isValidDeviceIP(currentIP, currentIP)) { // This line was not in the edit, but should be changed for consistency
           this.logger.log(`[SCAN] Appareil trouvé par scan de ports: ${currentIP} (ports: ${currentPorts.join(', ')})`)
           devices.push({
             id: uuidv4(),
@@ -884,7 +978,7 @@ export class NmapAgentService {
     }
 
     // Sauvegarder le dernier appareil
-    if (currentIP && !this.isLocalhost(currentIP)) {
+    if (currentIP && this.isValidDeviceIP(currentIP, currentIP)) { // This line was not in the edit, but should be changed for consistency
       this.logger.log(`[SCAN] Dernier appareil trouvé par scan de ports: ${currentIP} (ports: ${currentPorts.join(', ')})`)
       devices.push({
         id: uuidv4(),
@@ -908,4 +1002,111 @@ export class NmapAgentService {
     this.logger.log(`[SCAN] Total appareils trouvés par scan de ports: ${devices.length}`)
     return devices
   }
+
+  private async getOSFromNmap(ip: string): Promise<string> {
+    try {
+      const ports = [22, 23, 80, 135, 139, 443, 445, 515, 548, 631, 9100, 3389, 554, 8080, 8888, 1900]
+      const openPorts: number[] = []
+      const banners: Record<number, string> = {}
+      const net = require('net')
+      const timeout = 1000
+      for (const port of ports) {
+        await new Promise<void>(resolve => {
+          const socket = new net.Socket()
+          let banner = ''
+          let isOpen = false
+          socket.setTimeout(timeout)
+          socket.connect(port, ip, () => {
+            isOpen = true
+          })
+          socket.on('data', (data: Buffer) => {
+            banner += data.toString('utf8')
+            socket.destroy()
+          })
+          socket.on('timeout', () => {
+            socket.destroy()
+          })
+          socket.on('error', () => {
+            socket.destroy()
+          })
+          socket.on('close', () => {
+            if (isOpen) {
+              openPorts.push(port)
+              if (banner) banners[port] = banner.slice(0, 100)
+            }
+            resolve()
+          })
+        })
+      }
+      let ttl = 0
+      try {
+        const { stdout } = await execAsync(`ping -n 1 -w 1000 ${ip}`)
+        const ttlMatch = stdout.match(/TTL=(\d+)/i)
+        if (ttlMatch) ttl = parseInt(ttlMatch[1], 10)
+      } catch {}
+      const hostname = await this.getHostname(ip)
+      const mac = await this.getMACAddress(ip)
+      let macVendor = ''
+      if (mac) {
+        const oui = mac.slice(0, 8).toUpperCase()
+        if (oui.startsWith('00:1A:2B') || oui.startsWith('00:50:56')) macVendor = 'Cisco/VMware'
+        else if (oui.startsWith('B8:27:EB') || oui.startsWith('DC:A6:32')) macVendor = 'Raspberry Pi'
+        else if (oui.startsWith('00:1B:63') || oui.startsWith('00:1C:B3')) macVendor = 'Apple'
+        else if (oui.startsWith('00:1A:79')) macVendor = 'Router'
+        else if (oui.startsWith('00:1D:7D') || oui.startsWith('00:1F:5B')) macVendor = 'Desktop'
+        else if (oui.startsWith('00:1E:8C') || oui.startsWith('00:1F:3F')) macVendor = 'Mobile'
+        else if (oui.startsWith('00:80:77') || oui.startsWith('00:21:5C')) macVendor = 'HP/Printer'
+      }
+      let score: Record<string, number> = { Windows: 0, Linux: 0, Mac: 0, Printer: 0, IoT: 0 }
+      if (openPorts.some(p => [135, 139, 445, 3389, 5985, 5986].includes(p))) score.Windows += 3
+      if (openPorts.includes(22)) score.Linux += 2
+      if (openPorts.includes(548)) score.Mac += 2
+      if (openPorts.some(p => [9100, 515, 631].includes(p))) score.Printer += 3
+      if (openPorts.some(p => [80, 443, 23, 554, 8080, 8888, 1900].includes(p))) score.IoT += 1
+      if (ttl >= 120 && ttl <= 130) score.Windows += 2
+      if (ttl >= 60 && ttl <= 70) score.Linux += 2
+      if (ttl >= 240) score.Printer += 1
+      if (banners[22]?.toLowerCase().includes('openssh')) score.Linux += 3
+      if (banners[3389]?.toLowerCase().includes('rdp')) score.Windows += 2
+      if (banners[9100]?.toLowerCase().includes('hp')) score.Printer += 2
+      if (hostname.match(/router|box|tplink|dlink/i)) score.IoT += 2
+      if (hostname.match(/hp|canon|epson|brother|printer/i)) score.Printer += 2
+      if (hostname.match(/mac|apple/i)) score.Mac += 2
+      if (macVendor.match(/HP|Printer/i)) score.Printer += 2
+      if (macVendor.match(/Apple/i)) score.Mac += 2
+      if (macVendor.match(/Cisco|Router/i)) score.IoT += 1
+      this.logger.debug(`[OS DETECTION] ${ip} - Ports: ${openPorts.join(', ')} | TTL: ${ttl} | Hostname: ${hostname} | MAC: ${mac} (${macVendor}) | Banners: ${JSON.stringify(banners)}`)
+      this.logger.debug(`[OS DETECTION] Scores: ${JSON.stringify(score)}`)
+      const maxScore = Math.max(...Object.values(score))
+      const probableOS = Object.keys(score).find(os => score[os] === maxScore && maxScore > 0)
+      return probableOS || 'Unknown'
+    } catch (error) {
+      this.logger.error(`[OS DETECTION] Erreur détection OS pour ${ip}: ${error.message}`)
+      return 'Unknown'
+    }
+  }
+
+  // Map string (OUI type ou vendor) vers DeviceType enum
+  private mapStringToDeviceType(type: string): DeviceType {
+    if (!type) return DeviceType.OTHER
+    const t = type.toLowerCase()
+    if (t.includes('router')) return DeviceType.ROUTER
+    if (t.includes('switch')) return DeviceType.SWITCH
+    if (t.includes('access point') || t === 'ap') return DeviceType.AP
+    if (t.includes('server') || t.includes('nas')) return DeviceType.SERVER
+    if (t.includes('desktop') || t.includes('workstation')) return DeviceType.DESKTOP
+    if (t.includes('laptop') || t.includes('notebook')) return DeviceType.LAPTOP
+    if (t.includes('mobile') || t.includes('phone') || t.includes('tablet')) return DeviceType.MOBILE
+    if (t.includes('printer')) return DeviceType.PRINTER
+    return DeviceType.OTHER
+  }
+}
+
+// --- Ajout: Fonction locale pour déterminer le constructeur à partir de l'adresse MAC ---
+function getDeviceTypeFromMacLocal(macAddress: string): string | undefined {
+  if (!macAddress) return undefined
+  // Normaliser le format MAC (3 premiers octets, majuscules, séparés par ':')
+  const cleanMac = macAddress.replace(/-/g, ':').toUpperCase()
+  const oui = cleanMac.split(':').slice(0, 3).join(':')
+  return ouiDb[oui]
 }

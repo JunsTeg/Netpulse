@@ -2,6 +2,8 @@ import { Injectable, Logger } from "@nestjs/common"
 import { exec } from "child_process"
 import { promisify } from "util"
 import { type Device, DeviceType, DeviceStatus, type ServiceInfo } from "../device.model"
+import { getOuiDatabaseSingleton, getDeviceTypeFromMac } from '../../../utils/oui-util'
+import * as path from 'path'
 
 const execAsync = promisify(exec)
 
@@ -49,6 +51,53 @@ interface PythonScanResult {
     vendors: { [key: string]: number }
   }
   error?: string
+}
+
+// Ajouter la fonction utilitaire IPv4 CIDR
+function ipToInt(ip: string): number {
+  return ip.split('.').reduce((acc, octet) => (acc << 8) + Number(octet), 0)
+}
+function isIPv4InCIDR(ip: string, cidr: string): boolean {
+  const [range, bits] = cidr.split('/')
+  const ipNum = ipToInt(ip)
+  const rangeNum = ipToInt(range)
+  const mask = ~(2 ** (32 - Number(bits)) - 1)
+  return (ipNum & mask) === (rangeNum & mask)
+}
+function isMulticast(ip: string): boolean {
+  const first = Number(ip.split('.')[0])
+  return first >= 224 && first <= 239
+}
+function isAPIPA(ip: string): boolean {
+  return ip.startsWith("169.254.")
+}
+function isBroadcast(ip: string, cidr?: string): boolean {
+  const parts = ip.split('.')
+  if (parts.length === 4 && parts[3] === '255') return true
+  if (ip === '255.255.255.255' || ip === '0.0.0.0') return true
+  if (cidr) {
+    try {
+      const [base, mask] = cidr.split('/')
+      const baseParts = base.split('.').map(Number)
+      const maskNum = parseInt(mask, 10)
+      if (maskNum >= 24 && parts.length === 4) {
+        const broadcast = [...baseParts]
+        broadcast[3] = 255
+        if (ip === broadcast.join('.')) return true
+      }
+    } catch {}
+  }
+  return false
+}
+function isValidDeviceIP(ip: string, cidr: string): boolean {
+  return (
+    ip !== "127.0.0.1" &&
+    ip !== "::1" &&
+    !isBroadcast(ip, cidr) &&
+    !isMulticast(ip) &&
+    !isAPIPA(ip) &&
+    isIPv4InCIDR(ip, cidr)
+  )
 }
 
 @Injectable()
@@ -668,11 +717,14 @@ if __name__ == "__main__":
   private parsePythonResults(output: string): PythonScanResult {
     try {
       const result = JSON.parse(output)
-
       if (!result.success) {
         throw new Error(result.error || "Scan Python échoué")
       }
-
+      // Filtrage rigoureux des IPs
+      const cidr = result.scan_info?.network_range || ""
+      if (result.devices && Array.isArray(result.devices)) {
+        result.devices = result.devices.filter((device: any) => isValidDeviceIP(device.ip, cidr))
+      }
       return result
     } catch (error) {
       this.logger.error(`[PYTHON] Erreur parsing résultats: ${error.message}`)
@@ -722,10 +774,184 @@ if __name__ == "__main__":
       "Linux Computer": DeviceType.DESKTOP,
       Workstation: DeviceType.DESKTOP,
       "Mobile Device": DeviceType.MOBILE,
-      Printer: DeviceType.OTHER,
-      Server: DeviceType.SERVER,
+      Printer: DeviceType.PRINTER,
+      NAS: DeviceType.SERVER,
+      "NAS Device": DeviceType.SERVER,
+      TV: DeviceType.OTHER,
+      Camera: DeviceType.OTHER,
     }
-
     return typeMap[pyDeviceType] || DeviceType.OTHER
+  }
+
+  private async getOSFromPython(ip: string): Promise<string> {
+    try {
+      const ports = [22, 23, 80, 135, 139, 443, 445, 515, 548, 631, 9100, 3389, 554, 8080, 8888, 1900]
+      const openPorts: number[] = []
+      const banners: Record<number, string> = {}
+      const net = require('net')
+      const timeout = 1000
+      for (const port of ports) {
+        await new Promise<void>(resolve => {
+          const socket = new net.Socket()
+          let banner = ''
+          let isOpen = false
+          socket.setTimeout(timeout)
+          socket.connect(port, ip, () => {
+            isOpen = true
+          })
+          socket.on('data', (data: Buffer) => {
+            banner += data.toString('utf8')
+            socket.destroy()
+          })
+          socket.on('timeout', () => {
+            socket.destroy()
+          })
+          socket.on('error', () => {
+            socket.destroy()
+          })
+          socket.on('close', () => {
+            if (isOpen) {
+              openPorts.push(port)
+              if (banner) banners[port] = banner.slice(0, 100)
+            }
+            resolve()
+          })
+        })
+      }
+      let ttl = 0
+      try {
+        const { stdout } = await execAsync(`ping -n 1 -w 1000 ${ip}`)
+        const ttlMatch = stdout.match(/TTL=(\d+)/i)
+        if (ttlMatch) ttl = parseInt(ttlMatch[1], 10)
+      } catch {}
+      const hostname = await this.getHostnameFromDNS(ip)
+      const mac = await this.getMACAddress(ip)
+      let macVendor = ''
+      if (mac) {
+        const oui = mac.slice(0, 8).toUpperCase()
+        if (oui.startsWith('00:1A:2B') || oui.startsWith('00:50:56')) macVendor = 'Cisco/VMware'
+        else if (oui.startsWith('B8:27:EB') || oui.startsWith('DC:A6:32')) macVendor = 'Raspberry Pi'
+        else if (oui.startsWith('00:1B:63') || oui.startsWith('00:1C:B3')) macVendor = 'Apple'
+        else if (oui.startsWith('00:1A:79')) macVendor = 'Router'
+        else if (oui.startsWith('00:1D:7D') || oui.startsWith('00:1F:5B')) macVendor = 'Desktop'
+        else if (oui.startsWith('00:1E:8C') || oui.startsWith('00:1F:3F')) macVendor = 'Mobile'
+        else if (oui.startsWith('00:80:77') || oui.startsWith('00:21:5C')) macVendor = 'HP/Printer'
+      }
+      let score: Record<string, number> = { Windows: 0, Linux: 0, Mac: 0, Printer: 0, IoT: 0 }
+      if (openPorts.some(p => [135, 139, 445, 3389, 5985, 5986].includes(p))) score.Windows += 3
+      if (openPorts.includes(22)) score.Linux += 2
+      if (openPorts.includes(548)) score.Mac += 2
+      if (openPorts.some(p => [9100, 515, 631].includes(p))) score.Printer += 3
+      if (openPorts.some(p => [80, 443, 23, 554, 8080, 8888, 1900].includes(p))) score.IoT += 1
+      if (ttl >= 120 && ttl <= 130) score.Windows += 2
+      if (ttl >= 60 && ttl <= 70) score.Linux += 2
+      if (ttl >= 240) score.Printer += 1
+      if (banners[22]?.toLowerCase().includes('openssh')) score.Linux += 3
+      if (banners[3389]?.toLowerCase().includes('rdp')) score.Windows += 2
+      if (banners[9100]?.toLowerCase().includes('hp')) score.Printer += 2
+      if (hostname.match(/router|box|tplink|dlink/i)) score.IoT += 2
+      if (hostname.match(/hp|canon|epson|brother|printer/i)) score.Printer += 2
+      if (hostname.match(/mac|apple/i)) score.Mac += 2
+      if (macVendor.match(/HP|Printer/i)) score.Printer += 2
+      if (macVendor.match(/Apple/i)) score.Mac += 2
+      if (macVendor.match(/Cisco|Router/i)) score.IoT += 1
+      this.logger.debug(`[OS DETECTION] ${ip} - Ports: ${openPorts.join(', ')} | TTL: ${ttl} | Hostname: ${hostname} | MAC: ${mac} (${macVendor}) | Banners: ${JSON.stringify(banners)}`)
+      this.logger.debug(`[OS DETECTION] Scores: ${JSON.stringify(score)}`)
+      const maxScore = Math.max(...Object.values(score))
+      const probableOS = Object.keys(score).find(os => score[os] === maxScore && maxScore > 0)
+      return probableOS || 'Unknown'
+    } catch (error) {
+      this.logger.error(`[OS DETECTION] Erreur détection OS pour ${ip}: ${error.message}`)
+      return 'Unknown'
+    }
+  }
+
+  private async getHostnameFromDNS(ip: string): Promise<string> {
+    try {
+      const { exec } = require("child_process");
+      const { promisify } = require("util");
+      const execAsync = promisify(exec);
+      const { stdout } = await execAsync(`nslookup ${ip}`);
+      const match = stdout.match(/Name:\s*(.+)/);
+      return match ? match[1].trim() : ip;
+    } catch (error) {
+      return ip;
+    }
+  }
+
+  private async getMACAddress(ip: string): Promise<string> {
+    try {
+      const { exec } = require("child_process");
+      const { promisify } = require("util");
+      const execAsync = promisify(exec);
+      const { stdout } = await execAsync(`arp -a ${ip}`);
+      const macMatch = stdout.match(/([0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2})/i);
+      return macMatch ? macMatch[1].replace(/-/g, ":") : "";
+    } catch (error) {
+      this.logger.error(`[PYTHON] Erreur récupération MAC ${ip}: ${error.message}`);
+      return "";
+    }
+  }
+
+  async enrichDeviceInfo(device: Device): Promise<Device> {
+    // Charger la base OUI une seule fois
+    const ouiDb = getOuiDatabaseSingleton(path.resolve(__dirname, '../../../utils/oui-db.json'))
+    // 1. MAC address (ARP)
+    let macAddress = device.macAddress
+    if (!macAddress) {
+      const mac = await this.getMACAddress(device.ipAddress)
+      if (mac) {
+        macAddress = mac
+        this.logger.debug(`[ENRICH] MAC enrichi via ARP pour ${device.ipAddress}: ${mac}`)
+      }
+    }
+    // 2. Hostname (DNS)
+    let hostname = device.hostname
+    if (!hostname || hostname === device.ipAddress) {
+      const dns = await this.getHostnameFromDNS(device.ipAddress)
+      if (dns && dns !== device.ipAddress) {
+        hostname = dns
+        this.logger.debug(`[ENRICH] Hostname enrichi via DNS pour ${device.ipAddress}: ${dns}`)
+      }
+    }
+    // 3. OS (Python)
+    let os = device.os
+    if (!os || os === 'Unknown') {
+      os = await this.getOSFromPython(device.ipAddress) || os
+      if (os && os !== 'Unknown') {
+        this.logger.debug(`[ENRICH] OS enrichi via Python pour ${device.ipAddress}: ${os}`)
+      }
+    }
+    // 4. Type d'appareil via OUI
+    let deviceType = device.deviceType
+    if (macAddress) {
+      const ouiType = getDeviceTypeFromMac(macAddress, ouiDb)
+      if (ouiType) {
+        deviceType = this.mapStringToDeviceType(ouiType)
+      }
+    }
+    // 5. Fusion intelligente
+    return {
+      ...device,
+      macAddress: macAddress || device.macAddress,
+      hostname: hostname || device.hostname,
+      os: os || device.os,
+      deviceType: deviceType || device.deviceType,
+    }
+  }
+
+  // Map string (OUI type ou vendor) vers DeviceType enum
+  private mapStringToDeviceType(type: string): DeviceType {
+    if (!type) return DeviceType.OTHER
+    const t = type.toLowerCase()
+    if (t.includes('router')) return DeviceType.ROUTER
+    if (t.includes('switch')) return DeviceType.SWITCH
+    if (t.includes('access point') || t === 'ap') return DeviceType.AP
+    if (t.includes('server') || t.includes('nas')) return DeviceType.SERVER
+    if (t.includes('desktop') || t.includes('workstation')) return DeviceType.DESKTOP
+    if (t.includes('laptop') || t.includes('notebook')) return DeviceType.LAPTOP
+    if (t.includes('mobile') || t.includes('phone') || t.includes('tablet')) return DeviceType.MOBILE
+    if (t.includes('printer')) return DeviceType.PRINTER
+    return DeviceType.OTHER
   }
 }

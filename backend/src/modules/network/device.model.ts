@@ -41,6 +41,7 @@ export interface Device {
     bandwidth?: { download: number; upload: number }
     securityScore?: number
     vulnerabilities?: string[]
+    lastStatsError?: string // Ajout du champ pour message d'erreur collecte stats
   }
   lastSeen: Date
   firstDiscovered: Date

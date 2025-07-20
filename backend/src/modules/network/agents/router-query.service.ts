@@ -4,6 +4,10 @@ import { promisify } from "util"
 import { type Device, DeviceType, DeviceStatus } from "../device.model"
 import { v4 as uuidv4 } from "uuid"
 import * as os from "os"
+const net = require('net')
+// Supprimer l'import de oui-util et la logique associée
+import * as path from "path";
+import { getOuiDatabaseSingleton, getDeviceTypeFromMac } from '../../../utils/oui-util'
 
 const execAsync = promisify(exec)
 
@@ -22,9 +26,115 @@ interface ConnectedClient {
   lastSeen: Date
 }
 
+// Ajouter la fonction utilitaire IPv4 CIDR
+function ipToInt(ip: string): number {
+  return ip.split('.').reduce((acc, octet) => (acc << 8) + Number(octet), 0)
+}
+function isIPv4InCIDR(ip: string, cidr: string): boolean {
+  const [range, bits] = cidr.split('/')
+  const ipNum = ipToInt(ip)
+  const rangeNum = ipToInt(range)
+  const mask = ~(2 ** (32 - Number(bits)) - 1)
+  return (ipNum & mask) === (rangeNum & mask)
+}
+function isMulticast(ip: string): boolean {
+  const first = Number(ip.split('.')[0])
+  return first >= 224 && first <= 239
+}
+function isAPIPA(ip: string): boolean {
+  return ip.startsWith("169.254.")
+}
+function isBroadcast(ip: string, cidr?: string): boolean {
+  const parts = ip.split('.')
+  if (parts.length === 4 && parts[3] === '255') return true
+  if (ip === '255.255.255.255' || ip === '0.0.0.0') return true
+  if (cidr) {
+    try {
+      const [base, mask] = cidr.split('/')
+      const baseParts = base.split('.').map(Number)
+      const maskNum = parseInt(mask, 10)
+      if (maskNum >= 24 && parts.length === 4) {
+        const broadcast = [...baseParts]
+        broadcast[3] = 255
+        if (ip === broadcast.join('.')) return true
+      }
+    } catch {}
+  }
+  return false
+}
+function isValidDeviceIP(ip: string, cidr: string): boolean {
+  return (
+    ip !== "127.0.0.1" &&
+    ip !== "::1" &&
+    !isBroadcast(ip, cidr) &&
+    !isMulticast(ip) &&
+    !isAPIPA(ip) &&
+    isIPv4InCIDR(ip, cidr)
+  )
+}
+
 @Injectable()
 export class RouterQueryService {
   private readonly logger = new Logger(RouterQueryService.name)
+
+  /**
+   * Récupère les statistiques de trafic par port sur le routeur via SNMP
+   * Retourne un mapping { macAddress: { in: number, out: number, port: number } }
+   */
+  private async getPortTrafficStats(routerInfo: RouterInfo): Promise<Record<string, { in: number, out: number, port: number }>> {
+    const stats: Record<string, { in: number, out: number, port: number }> = {}
+    try {
+      // Récupérer la table des adresses MAC par port (BRIDGE-MIB)
+      // 1.3.6.1.2.1.17.4.3.1.2 : port associé à une MAC
+      // 1.3.6.1.2.1.17.4.3.1.1 : MAC
+      // 1.3.6.1.2.1.2.2.1.10 : octets entrants par port
+      // 1.3.6.1.2.1.2.2.1.16 : octets sortants par port
+      const { stdout: macPortOut } = await execAsync(`snmpwalk -v 2c -c ${routerInfo.snmpCommunity} ${routerInfo.ip} 1.3.6.1.2.1.17.4.3.1.2`)
+      const { stdout: inOctetsOut } = await execAsync(`snmpwalk -v 2c -c ${routerInfo.snmpCommunity} ${routerInfo.ip} 1.3.6.1.2.1.2.2.1.10`)
+      const { stdout: outOctetsOut } = await execAsync(`snmpwalk -v 2c -c ${routerInfo.snmpCommunity} ${routerInfo.ip} 1.3.6.1.2.1.2.2.1.16`)
+      // MAC -> port
+      const macToPort: Record<string, number> = {}
+      macPortOut.split('\n').forEach(line => {
+        const match = line.match(/([0-9a-fA-F:]+)\s*=\s*INTEGER:\s*(\d+)/)
+        if (match) {
+          const mac = match[1].replace(/ /g, ":").toLowerCase()
+          const port = parseInt(match[2], 10)
+          macToPort[mac] = port
+        }
+      })
+      // Port -> in/out octets
+      const inOctets: Record<number, number> = {}
+      inOctetsOut.split('\n').forEach(line => {
+        const match = line.match(/\.([0-9]+)\s*=\s*Counter32:\s*(\d+)/)
+        if (match) {
+          const port = parseInt(match[1], 10)
+          const value = parseInt(match[2], 10)
+          inOctets[port] = value
+        }
+      })
+      const outOctets: Record<number, number> = {}
+      outOctetsOut.split('\n').forEach(line => {
+        const match = line.match(/\.([0-9]+)\s*=\s*Counter32:\s*(\d+)/)
+        if (match) {
+          const port = parseInt(match[1], 10)
+          const value = parseInt(match[2], 10)
+          outOctets[port] = value
+        }
+      })
+      // Construction du mapping final
+      for (const mac in macToPort) {
+        const port = macToPort[mac]
+        stats[mac] = {
+          port,
+          in: inOctets[port] || 0,
+          out: outOctets[port] || 0
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`[ROUTER] SNMP stats ports échoué: ${error.message}`)
+    }
+    return stats
+  }
 
   async getConnectedDevices(): Promise<Device[]> {
     try {
@@ -42,8 +152,21 @@ export class RouterQueryService {
       const clients = await this.getConnectedClients(routerInfo)
       this.logger.log(`[ROUTER] Clients connectés trouvés: ${clients.length}`)
 
-      // 4. Convertir en objets Device
-      const devices = clients.map(client => this.convertToDevice(client))
+      // 4. Récupérer les stats de trafic par port
+      const portStats = await this.getPortTrafficStats(routerInfo)
+
+      // 5. Convertir en objets Device enrichis
+      const devices = clients.map(client => {
+        const mac = client.mac.toLowerCase()
+        const stats = portStats[mac]
+        return {
+          ...this.convertToDevice(client),
+          stats: {
+            ...this.convertToDevice(client).stats,
+            bandwidth: stats ? { download: stats.in, upload: stats.out } : { download: 0, upload: 0 }
+          }
+        }
+      })
 
       return devices
     } catch (error) {
@@ -194,6 +317,14 @@ export class RouterQueryService {
 
   private async getConnectedClients(routerInfo: RouterInfo): Promise<ConnectedClient[]> {
     const clients: ConnectedClient[] = []
+    // Déduire le CIDR du réseau à partir de la gateway (ex: 192.168.1.1 => 192.168.1.0/24)
+    let cidr = ""
+    if (routerInfo.ip) {
+      const parts = routerInfo.ip.split('.')
+      if (parts.length === 4) {
+        cidr = `${parts[0]}.${parts[1]}.${parts[2]}.0/24`
+      }
+    }
 
     try {
       // Méthode 1: SNMP ARP Table
@@ -207,7 +338,7 @@ export class RouterQueryService {
             const ip = match[1]
             const mac = match[2]
             
-            if (!this.isLocalhost(ip)) {
+            if (isValidDeviceIP(ip, cidr)) {
               clients.push({
                 ip,
                 mac,
@@ -235,7 +366,7 @@ export class RouterQueryService {
             const ip = match[1]
             const mac = match[2]
             
-            if (!this.isLocalhost(ip) && !clients.find(c => c.ip === ip)) {
+            if (isValidDeviceIP(ip, cidr) && !clients.find(c => c.ip === ip)) {
               clients.push({
                 ip,
                 mac,
@@ -265,7 +396,7 @@ export class RouterQueryService {
               const ip = match[1]
               const mac = match[2]
               
-              if (!this.isLocalhost(ip)) {
+              if (isValidDeviceIP(ip, cidr)) {
                 clients.push({
                   ip,
                   mac,
@@ -330,7 +461,6 @@ export class RouterQueryService {
     } else if (macPrefix.startsWith("00:1E:8C") || macPrefix.startsWith("00:1F:3F")) {
       return DeviceType.MOBILE
     }
-
     return DeviceType.OTHER
   }
 
@@ -351,5 +481,170 @@ export class RouterQueryService {
       }
     }
     return "127.0.0.1"
+  }
+
+  private async getOSFromSNMP(ip: string): Promise<string> {
+    try {
+      const ports = [22, 23, 80, 135, 139, 443, 445, 515, 548, 631, 9100, 3389, 554, 8080, 8888, 1900]
+      const openPorts: number[] = []
+      const banners: Record<number, string> = {}
+      const timeout = 1000
+      for (const port of ports) {
+        await new Promise<void>(resolve => {
+          const socket = new net.Socket()
+          let banner = ''
+          let isOpen = false
+          socket.setTimeout(timeout)
+          socket.connect(port, ip, () => {
+            isOpen = true
+          })
+          socket.on('data', (data: Buffer) => {
+            banner += data.toString('utf8')
+            socket.destroy()
+          })
+          socket.on('timeout', () => {
+            socket.destroy()
+          })
+          socket.on('error', () => {
+            socket.destroy()
+          })
+          socket.on('close', () => {
+            if (isOpen) {
+              openPorts.push(port)
+              if (banner) banners[port] = banner.slice(0, 100)
+            }
+            resolve()
+          })
+        })
+      }
+      let ttl = 0
+      try {
+        const { stdout } = await execAsync(`ping -n 1 -w 1000 ${ip}`)
+        const ttlMatch = stdout.match(/TTL=(\d+)/i)
+        if (ttlMatch) ttl = parseInt(ttlMatch[1], 10)
+      } catch {}
+      const hostname = await this.getHostnameFromDNS(ip)
+      const mac = await this.getMACAddress(ip)
+      let macVendor = ''
+      if (mac) {
+        const oui = mac.slice(0, 8).toUpperCase()
+        if (oui.startsWith('00:1A:2B') || oui.startsWith('00:50:56')) macVendor = 'Cisco/VMware'
+        else if (oui.startsWith('B8:27:EB') || oui.startsWith('DC:A6:32')) macVendor = 'Raspberry Pi'
+        else if (oui.startsWith('00:1B:63') || oui.startsWith('00:1C:B3')) macVendor = 'Apple'
+        else if (oui.startsWith('00:1A:79')) macVendor = 'Router'
+        else if (oui.startsWith('00:1D:7D') || oui.startsWith('00:1F:5B')) macVendor = 'Desktop'
+        else if (oui.startsWith('00:1E:8C') || oui.startsWith('00:1F:3F')) macVendor = 'Mobile'
+        else if (oui.startsWith('00:80:77') || oui.startsWith('00:21:5C')) macVendor = 'HP/Printer'
+      }
+      let score: Record<string, number> = { Windows: 0, Linux: 0, Mac: 0, Printer: 0, IoT: 0 }
+      if (openPorts.some(p => [135, 139, 445, 3389, 5985, 5986].includes(p))) score.Windows += 3
+      if (openPorts.includes(22)) score.Linux += 2
+      if (openPorts.includes(548)) score.Mac += 2
+      if (openPorts.some(p => [9100, 515, 631].includes(p))) score.Printer += 3
+      if (openPorts.some(p => [80, 443, 23, 554, 8080, 8888, 1900].includes(p))) score.IoT += 1
+      if (ttl >= 120 && ttl <= 130) score.Windows += 2
+      if (ttl >= 60 && ttl <= 70) score.Linux += 2
+      if (ttl >= 240) score.Printer += 1
+      if (banners[22]?.toLowerCase().includes('openssh')) score.Linux += 3
+      if (banners[3389]?.toLowerCase().includes('rdp')) score.Windows += 2
+      if (banners[9100]?.toLowerCase().includes('hp')) score.Printer += 2
+      if (hostname.match(/router|box|tplink|dlink/i)) score.IoT += 2
+      if (hostname.match(/hp|canon|epson|brother|printer/i)) score.Printer += 2
+      if (hostname.match(/mac|apple/i)) score.Mac += 2
+      if (macVendor.match(/HP|Printer/i)) score.Printer += 2
+      if (macVendor.match(/Apple/i)) score.Mac += 2
+      if (macVendor.match(/Cisco|Router/i)) score.IoT += 1
+      this.logger.debug(`[OS DETECTION] ${ip} - Ports: ${openPorts.join(', ')} | TTL: ${ttl} | Hostname: ${hostname} | MAC: ${mac} (${macVendor}) | Banners: ${JSON.stringify(banners)}`)
+      this.logger.debug(`[OS DETECTION] Scores: ${JSON.stringify(score)}`)
+      const maxScore = Math.max(...Object.values(score))
+      const probableOS = Object.keys(score).find(os => score[os] === maxScore && maxScore > 0)
+      return probableOS || 'Unknown'
+    } catch (error) {
+      this.logger.error(`[OS DETECTION] Erreur détection OS pour ${ip}: ${error.message}`)
+      return 'Unknown'
+    }
+  }
+
+  async enrichDeviceInfo(device: Device): Promise<Device> {
+    // Charger la base OUI une seule fois
+    const ouiDb = getOuiDatabaseSingleton(path.resolve(__dirname, '../../../utils/oui-db.json'))
+    // 1. MAC address (ARP)
+    let macAddress = device.macAddress
+    if (!macAddress) {
+      const mac = await this.getMACAddress(device.ipAddress)
+      if (mac) {
+        macAddress = mac
+        this.logger.debug(`[ENRICH] MAC enrichi via ARP pour ${device.ipAddress}: ${mac}`)
+      }
+    }
+    // 2. Hostname (DNS)
+    let hostname = device.hostname
+    if (!hostname || hostname === device.ipAddress) {
+      const dns = await this.getHostnameFromDNS(device.ipAddress)
+      if (dns && dns !== device.ipAddress) {
+        hostname = dns
+        this.logger.debug(`[ENRICH] Hostname enrichi via DNS pour ${device.ipAddress}: ${dns}`)
+      }
+    }
+    // 3. OS (SNMP)
+    let os = device.os
+    if (!os || os === 'Unknown') {
+      os = await this.getOSFromSNMP(device.ipAddress) || os
+      if (os && os !== 'Unknown') {
+        this.logger.debug(`[ENRICH] OS enrichi via SNMP/Router pour ${device.ipAddress}: ${os}`)
+      }
+    }
+    // 4. Type d'appareil via OUI
+    let deviceType = device.deviceType
+    if (macAddress) {
+      const ouiType = getDeviceTypeFromMac(macAddress, ouiDb)
+      if (ouiType) {
+        deviceType = this.mapStringToDeviceType(ouiType)
+      }
+    }
+    // 5. Fusion intelligente
+    return {
+      ...device,
+      macAddress: macAddress || device.macAddress,
+      hostname: hostname || device.hostname,
+      os: os || device.os,
+      deviceType: deviceType || device.deviceType,
+    }
+  }
+
+  // Map string (OUI type ou vendor) vers DeviceType enum
+  private mapStringToDeviceType(type: string): DeviceType {
+    if (!type) return DeviceType.OTHER
+    const t = type.toLowerCase()
+    if (t.includes('router')) return DeviceType.ROUTER
+    if (t.includes('switch')) return DeviceType.SWITCH
+    if (t.includes('access point') || t === 'ap') return DeviceType.AP
+    if (t.includes('server') || t.includes('nas')) return DeviceType.SERVER
+    if (t.includes('desktop') || t.includes('workstation')) return DeviceType.DESKTOP
+    if (t.includes('laptop') || t.includes('notebook')) return DeviceType.LAPTOP
+    if (t.includes('mobile') || t.includes('phone') || t.includes('tablet')) return DeviceType.MOBILE
+    if (t.includes('printer')) return DeviceType.PRINTER
+    return DeviceType.OTHER
+  }
+
+  private async getHostnameFromDNS(ip: string): Promise<string> {
+    try {
+      const { stdout } = await execAsync(`nslookup ${ip}`)
+      const match = stdout.match(/Name:\s*(.+)/)
+      return match ? match[1].trim() : ip
+    } catch (error) {
+      return ip
+    }
+  }
+
+  private async getMACAddress(ip: string): Promise<string> {
+    try {
+      const { stdout } = await execAsync(`arp -a ${ip}`)
+      const macMatch = stdout.match(/([0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2})/i)
+      return macMatch ? macMatch[1].replace(/-/g, ":") : ""
+    } catch (error) {
+      this.logger.error(`[ENRICH] Erreur récupération MAC ${ip}: ${error.message}`)
+      return ""
+    }
   }
 } 

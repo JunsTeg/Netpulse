@@ -576,6 +576,7 @@ const Devices = () => {
           <CTable hover responsive className="fun-table">
             <CTableHead>
               <CTableRow>
+                <CTableHeaderCell>#</CTableHeaderCell>
                 <CTableHeaderCell>Hostname</CTableHeaderCell>
                 <CTableHeaderCell>Type</CTableHeaderCell>
                 <CTableHeaderCell>Adresse IP</CTableHeaderCell>
@@ -583,7 +584,6 @@ const Devices = () => {
                 <CTableHeaderCell>Système</CTableHeaderCell>
                 <CTableHeaderCell>Statut</CTableHeaderCell>
                 <CTableHeaderCell>Dernière vue</CTableHeaderCell>
-                <CTableHeaderCell>Méthode</CTableHeaderCell>
                 <CTableHeaderCell>Actions</CTableHeaderCell>
               </CTableRow>
             </CTableHead>
@@ -597,6 +597,9 @@ const Devices = () => {
                 if (method.includes("arp")) methodColor = "warning"
                 return (
                   <CTableRow key={device.id} style={{ animation: `fadeIn .7s ${0.1*idx}s both` }}>
+                    <CTableDataCell>
+                      {idx + 1}
+                    </CTableDataCell>
                     <CTableDataCell>
                       <div className="d-flex align-items-center">
                         {device.hostname}
@@ -618,9 +621,6 @@ const Devices = () => {
                       </CBadge>
                     </CTableDataCell>
                     <CTableDataCell>{new Date(device.lastSeen).toLocaleString()}</CTableDataCell>
-                    <CTableDataCell>
-                      <CBadge color={methodColor} style={{ fontSize: 13, padding: '4px 10px' }}>{method}</CBadge>
-                    </CTableDataCell>
                     <CTableDataCell>
                       <CTooltip content="Editer cet appareil">
                         <CButton 

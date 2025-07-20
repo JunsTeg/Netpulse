@@ -15,15 +15,15 @@ export class UsersController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get(':id')
-  async getUserById(@Param('id') id: string): Promise<UserRecord> {
-    return this.authService.getUserById(id);
-  }
-
-  @UseGuards(JwtAuthGuard)
   @Get('me')
   async getProfile(@Request() req): Promise<UserRecord> {
     return this.authService.getUserById(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id')
+  async getUserById(@Param('id') id: string): Promise<UserRecord> {
+    return this.authService.getUserById(id);
   }
 
   @UseGuards(JwtAuthGuard)

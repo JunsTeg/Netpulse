@@ -222,13 +222,22 @@ export class AuthService {
 
   // Methode pour recuperer tous les utilisateurs
   async getAllUsers(): Promise<UserRecord[]> {
-    const users = await sequelize.query<UserRecord>(
-      'SELECT id, username, email, isActive, createdAt, lastLoginAt FROM utilisateur',
-      {
-        type: QueryTypes.SELECT,
-      },
-    );
-    return users;
+    try {
+      console.log('🔍 Tentative de récupération de tous les utilisateurs...');
+      
+      const users = await sequelize.query<UserRecord>(
+        'SELECT id, username, email, isActive, createdAt, lastLoginAt FROM utilisateur',
+        {
+          type: QueryTypes.SELECT,
+        },
+      );
+      
+      console.log(`✅ ${users.length} utilisateurs récupérés avec succès`);
+      return users;
+    } catch (error) {
+      console.error('❌ Erreur lors de la récupération des utilisateurs:', error);
+      throw new Error(`Erreur lors de la récupération des utilisateurs: ${error.message}`);
+    }
   }
 
   // Methode pour recuperer un utilisateur par son ID

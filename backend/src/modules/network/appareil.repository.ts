@@ -1,8 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common"
 import { v4 as uuidv4 } from "uuid"
-import { Device, DeviceStatus } from "./device.model"
+import { Device, DeviceStatus, DeviceType } from "./device.model"
 import { QueryTypes } from "sequelize"
 import { sequelize } from "../../database"
+// Supprimer toute référence à loadOuiDatabase ou ouiDb
+import * as path from "path"
 
 @Injectable()
 export class AppareilRepository {
@@ -13,26 +15,19 @@ export class AppareilRepository {
    */
   async upsertDevice(device: Device): Promise<string | null> {
     try {
-      // 1. Détection d'unicité : priorité MAC, sinon IP+hostname
-      let existing: { id: string }[] = []
-      if (device.macAddress && device.macAddress.trim() !== "") {
-        existing = await sequelize.query<{ id: string }>(
-          `SELECT id FROM appareils WHERE macAddress = :mac LIMIT 1`,
-          {
-            replacements: { mac: device.macAddress },
-            type: QueryTypes.SELECT,
-          }
-        )
-      }
-      if ((!existing || existing.length === 0) && device.ipAddress && device.hostname) {
-        existing = await sequelize.query<{ id: string }>(
-          `SELECT id FROM appareils WHERE ipAddress = :ip AND hostname = :hostname LIMIT 1`,
+      // Suppression du fallback OUI enrichi
+      // 1. Vérification d'existence par (ipAddress, hostname) d'abord
+      let existing: { id: string, hostname: string, macAddress: string, os: string, deviceType: string, stats: string, lastSeen: Date }[] = []
+      if (device.ipAddress && device.hostname) {
+        existing = await sequelize.query<{ id: string, hostname: string, macAddress: string, os: string, deviceType: string, stats: string, lastSeen: Date }>(
+          `SELECT * FROM appareils WHERE ipAddress = :ip AND hostname = :hostname LIMIT 1`,
           {
             replacements: { ip: device.ipAddress, hostname: device.hostname },
             type: QueryTypes.SELECT,
           }
         )
       }
+      // Si non trouvé, on insérera
 
       // 2. Toujours garantir la cohérence des champs
       if (!device.stats || typeof device.stats !== 'object') {
@@ -46,6 +41,33 @@ export class AppareilRepository {
       let id: string
       if (existing && existing.length > 0) {
         id = existing[0].id
+        // Fusion intelligente : ne pas écraser les champs non vides par des valeurs vides ou génériques, toujours garder la valeur la plus complète
+        function bestValue(a: any, b: any) {
+          if (a && b) {
+            if (typeof a === 'string' && typeof b === 'string') {
+              // Prendre la plus longue (plus descriptive)
+              return b.length > a.length ? b : a
+            }
+            if (typeof a === 'object' && typeof b === 'object') {
+              // Prendre l'objet le plus riche
+              return Object.keys(b).length > Object.keys(a).length ? b : a
+            }
+            // Sinon, garder la valeur non vide la plus "riche"
+            return b || a
+          }
+          return a || b
+        }
+        const merged = {
+          hostname: bestValue(existing[0].hostname, device.hostname),
+          macAddress: bestValue(existing[0].macAddress, device.macAddress),
+          os: bestValue(existing[0].os, device.os),
+          deviceType: bestValue(existing[0].deviceType, device.deviceType),
+          stats: JSON.stringify(bestValue(
+            typeof existing[0].stats === 'string' ? JSON.parse(existing[0].stats) : existing[0].stats,
+            typeof device.stats === 'string' ? JSON.parse(device.stats) : device.stats
+          )),
+          lastSeen: device.lastSeen || existing[0].lastSeen,
+        }
         await sequelize.query(
           `UPDATE appareils SET
             hostname = :hostname,
@@ -59,17 +81,12 @@ export class AppareilRepository {
           {
             replacements: {
               id,
-              hostname: device.hostname,
-              macAddress: device.macAddress,
-              os: device.os,
-              deviceType: device.deviceType,
-              stats: JSON.stringify(device.stats),
-              lastSeen: device.lastSeen,
+              ...merged,
             },
             type: QueryTypes.UPDATE,
           }
         )
-        this.logger.debug(`[UPSERT] Appareil mis à jour (fusion): ${device.ipAddress} / ${device.macAddress}`)
+        this.logger.debug(`[UPSERT] Appareil mis à jour (fusion avancée): ${device.ipAddress} / ${device.macAddress}`)
       } else {
         id = device.id || uuidv4()
         await sequelize.query(

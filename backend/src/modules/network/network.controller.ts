@@ -320,10 +320,11 @@ export class NetworkController {
         const nmapStart = Date.now()
         const networksInfo = await this.detectActiveNetwork()
         let nmapDevices: any[] = []
-        for (const net of networksInfo) {
+        // Priorité : ne scanner que la première interface active
+        if (Array.isArray(networksInfo) && networksInfo.length > 0) {
+          const net = networksInfo[0]
           const nmapResult = await this.networkService.scanNetwork(net.cidr, req.user.id)
           if (nmapResult && nmapResult.devices) {
-            // Les appareils sont déjà upsertés par le NmapAgentService
             nmapDevices = nmapDevices.concat(nmapResult.devices)
           }
         }
@@ -336,58 +337,81 @@ export class NetworkController {
         results.methods.push(`Nmap Scan: Échec - ${error.message}`)
       }
 
-      // 3. Combiner et dédupliquer les résultats
-      const deviceMap = new Map()
-
-      // Fonction utilitaire pour fusionner deux appareils
-      function mergeDevices(existing, incoming) {
-        return {
-          ...existing,
-          ...Object.fromEntries(Object.entries(incoming).filter(([k, v]) => v !== undefined && v !== null && v !== '')),
-          sources: Array.from(new Set([...(existing.sources || [existing.source || '']), ...(incoming.sources || [incoming.source || ''])])).filter(Boolean)
-        }
+      // ENRICHISSEMENT : pipeline du scan auto sur chaque source AVANT fusion
+      let enrichedRouterDevices = []
+      let enrichedNmapDevices = []
+      if (results.routerDevices && results.routerDevices.length > 0) {
+        enrichedRouterDevices = await this.nmapAgentService.enrichBasicInfo(results.routerDevices)
+      }
+      if (results.nmapDevices && results.nmapDevices.length > 0) {
+        enrichedNmapDevices = await this.nmapAgentService.enrichBasicInfo(results.nmapDevices)
       }
 
-      // Ajouter les appareils du routeur (nécessitent upsert car pas gérés par NmapAgentService)
-      for (const device of results.routerDevices) {
+      // Vérification : lister les appareils présents dans les deux sources (Nmap ET routeur) avant la fusion
+      const nmapMap = new Map()
+      for (const device of enrichedNmapDevices) {
         const key = device.macAddress || (device.ipAddress + (device.hostname || ''))
+        if (key) nmapMap.set(key, device)
+      }
+      const routerMap = new Map()
+      for (const device of enrichedRouterDevices) {
+        const key = device.macAddress || (device.ipAddress + (device.hostname || ''))
+        if (key) routerMap.set(key, device)
+      }
+      // Appareils présents dans les deux sources
+      const inBoth = []
+      for (const [key, device] of nmapMap) {
+        if (routerMap.has(key)) {
+          inBoth.push({
+            nmap: device,
+            router: routerMap.get(key)
+          })
+        }
+      }
+      this.logger.log(`[SCAN] Appareils présents dans les deux sources (Nmap ET Routeur): ${inBoth.length}`)
+      // Optionnel : exposer dans la réponse API pour debug
+      // results.inBoth = inBoth
+
+      // 3. Combiner et dédupliquer les résultats UNIQUEMENT pour les appareils présents dans les deux sources
+      const deviceMap = new Map()
+      function mergeDevices(existing, incoming) {
+        const merged = { ...existing }
+        for (const [k, v] of Object.entries(incoming)) {
+          if (
+            v !== undefined && v !== null && v !== '' &&
+            (merged[k] === undefined || merged[k] === null || merged[k] === '' || (typeof v === 'object' && Object.keys(v).length > Object.keys(merged[k] || {}).length))
+          ) {
+            merged[k] = v
+          }
+        }
+        merged.sources = Array.from(new Set([...(existing.sources || [existing.source || '']), ...(incoming.sources || [incoming.source || ''])])).filter(Boolean)
+        return merged
+      }
+      for (const pair of inBoth) {
+        const deviceNmap = pair.nmap
+        const deviceRouter = pair.router
+        const key = deviceNmap.macAddress || (deviceNmap.ipAddress + (deviceNmap.hostname || ''))
         if (key && !deviceMap.has(key)) {
-          // Upsert des appareils du routeur
+          // Upsert de l'appareil fusionné
+          const merged = mergeDevices(deviceRouter, deviceNmap)
           const toSave = {
-            ...device,
+            ...merged,
             lastSeen: new Date(),
-            firstDiscovered: device.firstDiscovered || new Date(),
+            firstDiscovered: merged.firstDiscovered || new Date(),
             status: 'connu',
           }
           const realId = await this.appareilRepository.upsertDevice(toSave)
           if (realId) {
             deviceMap.set(key, {
-              ...device,
+              ...merged,
               id: realId,
-              sources: ['router']
+              sources: merged.sources
             })
           }
         }
       }
-
-      // Ajouter les appareils nmap (déjà upsertés par NmapAgentService)
-      for (const device of results.nmapDevices) {
-        const key = device.macAddress || (device.ipAddress + (device.hostname || ''))
-        if (key) {
-          if (deviceMap.has(key)) {
-            // Fusionner les informations intelligemment
-            const existing = deviceMap.get(key)
-            deviceMap.set(key, mergeDevices(existing, { ...device, sources: ['nmap'] }))
-          } else {
-            deviceMap.set(key, {
-              ...device,
-              sources: ['nmap']
-            })
-          }
-        }
-      }
-
-      results.combinedDevices = Array.from(deviceMap.values())
+      let combinedDevices = Array.from(deviceMap.values())
+      results.combinedDevices = combinedDevices
       results.scanDuration = Date.now() - startTime
 
       // Récupérer les IDs des appareils détectés pour la désactivation
@@ -609,69 +633,51 @@ export class NetworkController {
   private async detectActiveNetwork() {
     try {
       const interfaces = os.networkInterfaces()
-      const gateway = await this.routerQuery.detectGateway()
       const wifiOrEthRegex = /wi[-]?fi|wlan|ethernet|en|eth/i
-      let selected = null
+      const candidates = []
+      // 1. Filtrer toutes les interfaces physiques IPv4
       for (const [name, nets] of Object.entries(interfaces)) {
         if (!nets) continue
         if (!wifiOrEthRegex.test(name)) continue
         for (const net of nets) {
           if (net.family === 'IPv4' && !net.internal && net.address) {
             const ipParts = net.address.split('.')
-            const gwParts = gateway.split('.')
-            if (ipParts[0] === gwParts[0] && ipParts[1] === gwParts[1] && ipParts[2] === gwParts[2]) {
-              const networkPrefix = ipParts.slice(0, 3).join('.')
-              const cidr = `${networkPrefix}.0/24`
-              selected = {
-                interface: name,
-                localIP: net.address,
-                netmask: net.netmask,
-                cidr,
-                gateway
-              }
-              break
-            }
+            const networkPrefix = ipParts.slice(0, 3).join('.')
+            const cidr = `${networkPrefix}.0/24`
+            candidates.push({
+              interface: name,
+              localIP: net.address,
+              netmask: net.netmask,
+              cidr,
+              gateway: `${networkPrefix}.1`
+            })
           }
         }
-        if (selected) break
       }
-      if (!selected) {
-        // Fallback : première interface Wi-Fi/Ethernet trouvée
-        for (const [name, nets] of Object.entries(interfaces)) {
-          if (!nets) continue
-          if (!wifiOrEthRegex.test(name)) continue
-          for (const net of nets) {
-            if (net.family === 'IPv4' && !net.internal && net.address) {
-              const ipParts = net.address.split('.')
-              const networkPrefix = ipParts.slice(0, 3).join('.')
-              const cidr = `${networkPrefix}.0/24`
-              selected = {
-                interface: name,
-                localIP: net.address,
-                netmask: net.netmask,
-                cidr,
-                gateway: `${networkPrefix}.1`
-              }
-              break
-            }
-          }
-          if (selected) break
-        }
+      // 2. Tester la gateway de chaque interface (ping)
+      const activeNetworks = []
+      const exec = require('child_process').exec
+      const pingGateway = (gateway) => new Promise(resolve => {
+        exec(process.platform === 'win32' ? `ping -n 1 -w 1000 ${gateway}` : `ping -c 1 -W 1 ${gateway}`,
+          (err, stdout) => {
+            if (stdout && stdout.toLowerCase().includes('ttl')) resolve(true)
+            else resolve(false)
+          })
+      })
+      for (const net of candidates) {
+        // eslint-disable-next-line no-await-in-loop
+        const reachable = await pingGateway(net.gateway)
+        if (reachable) activeNetworks.push(net)
       }
-      if (!selected) {
-        selected = {
-          interface: "default",
-          localIP: "192.168.1.1",
-          netmask: "255.255.255.0",
-          cidr: "192.168.1.0/24",
-          gateway: "192.168.1.1"
-        }
+      if (activeNetworks.length === 0) {
+        this.logger.warn('[CONTROLLER] Aucune interface physique active détectée (gateway non joignable)')
+        throw new Error('Aucune interface physique active détectée (gateway non joignable)')
       }
-      this.logger.log(`[CONTROLLER] Réseau actif détecté: ${selected.cidr} (gateway: ${selected.gateway})`)
-      return selected
+      this.logger.log(`[CONTROLLER] Réseaux actifs détectés: ${activeNetworks.map(n => n.cidr).join(', ')}`)
+      return activeNetworks
     } catch (error) {
       this.logger.error(`[CONTROLLER] Erreur détection réseau actif: ${error.message}`)
-      throw new Error("Impossible de détecter le réseau actif")
+      throw new Error('Impossible de détecter le réseau actif')
     }
   }
 }
