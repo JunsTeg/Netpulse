@@ -35,6 +35,7 @@ import {
   CToast,
   CToastBody,
   CToaster,
+  CButtonGroup,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { 
@@ -47,6 +48,7 @@ import {
   cilWarning,
   cilCheckCircle,
   cilXCircle,
+  cilSpeedometer,
 } from '@coreui/icons'
 import { API_CONFIG, buildApiUrl } from '../../config/api.config'
 import { io } from "socket.io-client"
@@ -75,6 +77,8 @@ const Devices = () => {
   const confettiRef = useRef(null)
   const [toast, setToast] = useState({ show: false, message: '', color: 'success' })
   const toasterRef = useRef()
+  // Ajout d'un état pour le mode de scan en cours
+  const [scanMode, setScanMode] = useState(null)
 
   // Initialisation du token d'authentification
   useEffect(() => {
@@ -411,6 +415,57 @@ const Devices = () => {
     }
   }
 
+  // Nouveau handler pour le scan rapide
+  const handleScanFast = async () => {
+    setScanMode('rapide')
+    await handleScanWithMode('rapide')
+    setScanMode(null)
+  }
+  // Nouveau handler pour le scan complet
+  const handleScanFull = async () => {
+    setScanMode('complet')
+    await handleScanWithMode('complet')
+    setScanMode(null)
+  }
+  // Fonction générique pour lancer le scan avec le mode choisi
+  const handleScanWithMode = async (mode) => {
+    try {
+      setLoading(true)
+      setError(null)
+      setToast({ show: false, message: '', color: 'success' })
+      const authValid = await testAuth()
+      if (!authValid) {
+        setLoading(false)
+        return
+      }
+      // 1. Détection automatique du réseau
+      const networkResponse = await axios.get('/api/network/detect')
+      if (!networkResponse.data || !networkResponse.data.network) {
+        throw new Error('Impossible de détecter le réseau automatiquement')
+      }
+      // 2. Scan avec le mode choisi
+      const comprehensiveResponse = await axios.get('/api/network/comprehensive-scan', {
+        params: { mode },
+        timeout: 300000
+      })
+      if (!comprehensiveResponse.data.success) {
+        throw new Error(comprehensiveResponse.data.message || 'Erreur lors du scan')
+      }
+      // 3. (optionnel) Récupération de la topologie si mode complet
+      if (mode === 'complet') {
+        await axios.get('/api/network/topology')
+      }
+      // 4. Mise à jour de la liste des appareils
+      await fetchDevices()
+      setToast({ show: true, message: `✅ Scan ${mode === 'rapide' ? 'rapide' : 'complet'} terminé : ${comprehensiveResponse.data.count || comprehensiveResponse.data.data?.length || 0} appareils détectés !`, color: 'success' })
+    } catch (err) {
+      setError('Erreur lors du scan: ' + (err.response?.data?.message || err.message))
+      setToast({ show: true, message: '❌ ' + (err.response?.data?.message || err.message), color: 'danger' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const resetForm = () => {
     setVisible(false)
     setSelectedDevice(null)
@@ -484,6 +539,56 @@ const Devices = () => {
               <h4 className="mb-0">Gestion des Appareils</h4>
             </CCol>
             <CCol xs="auto" className="ms-auto">
+              <CButtonGroup role="group" aria-label="Actions scan" className="me-2">
+                <CTooltip content="Scan rapide (pipeline auto, très rapide)">
+                  <CButton
+                    color="info"
+                    variant="outline"
+                    onClick={handleScanFast}
+                    disabled={scanButtonDisabled || scanMode === 'complet'}
+                    style={{ minWidth: 120 }}
+                  >
+                    {scanMode === 'rapide' && loading ? <CSpinner size="sm" className="me-2" /> : <CIcon icon={cilSpeedometer} className="me-2" />}Scan rapide
+                  </CButton>
+                </CTooltip>
+                <CTooltip content="Scan complet (pipeline avancée, enrichissement, topologie)">
+                  <CButton
+                    color="success"
+                    variant="outline"
+                    onClick={handleScanFull}
+                    disabled={scanButtonDisabled || scanMode === 'rapide'}
+                    style={{ minWidth: 120 }}
+                  >
+                    {scanMode === 'complet' && loading ? <CSpinner size="sm" className="me-2" /> : <CIcon icon={cilSearch} className="me-2" />}Scan complet
+                  </CButton>
+                </CTooltip>
+                <CTooltip content="Rafraichir la liste des appareils">
+                  <CButton 
+                    color="secondary" 
+                    variant="outline"
+                    onClick={handleRefresh}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <CSpinner size="sm" className="me-2" />
+                    ) : (
+                      <CIcon icon={cilReload} className="me-2" />
+                    )}
+                    Rafraichir
+                  </CButton>
+                </CTooltip>
+                <CTooltip content="Diagnostiquer le problème de récupération">
+                  <CButton 
+                    color="info" 
+                    variant="outline"
+                    onClick={handleDebug}
+                    disabled={loading}
+                  >
+                    <CIcon icon={cilInfo} className="me-2" />
+                    Debug
+                  </CButton>
+                </CTooltip>
+              </CButtonGroup>
               <CTooltip content="Ajouter un nouvel appareil sur le reseau">
                 <CButton 
                   color="primary" 
@@ -491,55 +596,10 @@ const Devices = () => {
                     setSelectedDevice(null)
                     setVisible(true)
                   }}
-                  className="me-2"
                   style={{ borderRadius: "30px", fontWeight: "bold", boxShadow: `0 0 8px ${getComputedStyle(document.body).getPropertyValue('--color-primary').trim() || "#3b82f6"}55` }}
                 >
                   <CIcon icon={cilPlus} className="me-2" />
                   Ajouter
-                </CButton>
-              </CTooltip>
-              
-              <CTooltip content="Scan complet intégré (Routeur + Nmap + Topologie + Statistiques)">
-                <CButton 
-                  color="success" 
-                  onClick={handleScan}
-                  disabled={scanButtonDisabled}
-                  className="me-2 scan-radar-btn"
-                  style={{ borderRadius: "50%", width: 56, height: 56, boxShadow: scanButtonDisabled ? "none" : `0 0 16px ${getComputedStyle(document.body).getPropertyValue('--color-success').trim() || "#10b981"}99`, position: 'relative', overflow: 'hidden' }}
-                >
-                  <span className="ripple" />
-                  <span className="radar-icon">
-                    <CIcon icon={cilSearch} className={scanButtonDisabled ? "spin" : "radar-anim"} style={{ fontSize: 28 }} />
-                  </span>
-                </CButton>
-              </CTooltip>
-              
-              <CTooltip content="Rafraichir la liste des appareils">
-                <CButton 
-                  color="secondary" 
-                  onClick={handleRefresh}
-                  disabled={loading}
-                  style={{ borderRadius: "30px" }}
-                >
-                  {loading ? (
-                    <CSpinner size="sm" className="me-2" />
-                  ) : (
-                    <CIcon icon={cilReload} className="me-2" />
-                  )}
-                  Rafraichir
-                </CButton>
-              </CTooltip>
-              
-              <CTooltip content="Diagnostiquer le problème de récupération">
-                <CButton 
-                  color="info" 
-                  onClick={handleDebug}
-                  disabled={loading}
-                  style={{ borderRadius: "30px" }}
-                  className="ms-2"
-                >
-                  <CIcon icon={cilInfo} className="me-2" />
-                  Debug
                 </CButton>
               </CTooltip>
             </CCol>

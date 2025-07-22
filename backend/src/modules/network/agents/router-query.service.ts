@@ -1,4 +1,6 @@
-import { Injectable, Logger } from "@nestjs/common"
+import { Injectable, Logger } from '@nestjs/common';
+import { OuiService } from '../services/oui.service';
+import { DeviceTypeService } from '../services/device-type.service';
 import { exec } from "child_process"
 import { promisify } from "util"
 import { type Device, DeviceType, DeviceStatus } from "../device.model"
@@ -7,7 +9,9 @@ import * as os from "os"
 const net = require('net')
 // Supprimer l'import de oui-util et la logique associée
 import * as path from "path";
-import { getOuiDatabaseSingleton, getDeviceTypeFromMac } from '../../../utils/oui-util'
+import * as fs from "fs"
+
+
 
 const execAsync = promisify(exec)
 
@@ -76,6 +80,11 @@ function isValidDeviceIP(ip: string, cidr: string): boolean {
 @Injectable()
 export class RouterQueryService {
   private readonly logger = new Logger(RouterQueryService.name)
+
+  constructor(
+    private readonly ouiService: OuiService,
+    private readonly deviceTypeService: DeviceTypeService,
+  ) {}
 
   /**
    * Récupère les statistiques de trafic par port sur le routeur via SNMP
@@ -440,28 +449,9 @@ export class RouterQueryService {
 
   private detectDeviceTypeFromMAC(mac: string): DeviceType {
     if (!mac) return DeviceType.OTHER
-
-    const macPrefix = mac.substring(0, 8).toUpperCase()
-
-    // Détection basée sur les préfixes MAC des fabricants
-    if (macPrefix.startsWith("00:50:56") || macPrefix.startsWith("00:0C:29")) {
-      return DeviceType.SERVER // Machines virtuelles
-    } else if (macPrefix.startsWith("B8:27:EB") || macPrefix.startsWith("DC:A6:32")) {
-      return DeviceType.SERVER // Raspberry Pi
-    } else if (macPrefix.startsWith("00:1A:79")) {
-      return DeviceType.ROUTER
-    } else if (macPrefix.startsWith("00:1B:63") || macPrefix.startsWith("00:1C:B3")) {
-      return DeviceType.SWITCH
-    } else if (macPrefix.startsWith("00:1A:2B") || macPrefix.startsWith("00:1C:0E")) {
-      return DeviceType.AP
-    } else if (macPrefix.startsWith("00:1E:8C") || macPrefix.startsWith("00:1F:3F")) {
-      return DeviceType.LAPTOP
-    } else if (macPrefix.startsWith("00:1D:7D") || macPrefix.startsWith("00:1F:5B")) {
-      return DeviceType.DESKTOP
-    } else if (macPrefix.startsWith("00:1E:8C") || macPrefix.startsWith("00:1F:3F")) {
-      return DeviceType.MOBILE
-    }
-    return DeviceType.OTHER
+    
+    const detectionResult = this.deviceTypeService.detectDeviceType({ macAddress: mac })
+    return detectionResult.deviceType
   }
 
   private isLocalhost(ip: string): boolean {
@@ -566,8 +556,6 @@ export class RouterQueryService {
   }
 
   async enrichDeviceInfo(device: Device): Promise<Device> {
-    // Charger la base OUI une seule fois
-    const ouiDb = getOuiDatabaseSingleton(path.resolve(__dirname, '../../../utils/oui-db.json'))
     // 1. MAC address (ARP)
     let macAddress = device.macAddress
     if (!macAddress) {
@@ -594,13 +582,11 @@ export class RouterQueryService {
         this.logger.debug(`[ENRICH] OS enrichi via SNMP/Router pour ${device.ipAddress}: ${os}`)
       }
     }
-    // 4. Type d'appareil via OUI
+    // 4. Type d'appareil via service centralisé
     let deviceType = device.deviceType
     if (macAddress) {
-      const ouiType = getDeviceTypeFromMac(macAddress, ouiDb)
-      if (ouiType) {
-        deviceType = this.mapStringToDeviceType(ouiType)
-      }
+      const detectionResult = this.deviceTypeService.detectDeviceType({ macAddress })
+      deviceType = detectionResult.deviceType
     }
     // 5. Fusion intelligente
     return {

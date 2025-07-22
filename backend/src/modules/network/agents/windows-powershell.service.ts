@@ -1,9 +1,10 @@
-import { Injectable, Logger } from "@nestjs/common"
+import { Injectable, Logger } from '@nestjs/common';
+import { OuiService } from '../services/oui.service';
+import { DeviceTypeService } from '../services/device-type.service';
 import { exec } from "child_process"
 import { promisify } from "util"
 import { type Device, DeviceType, DeviceStatus, type ServiceInfo } from "../device.model"
-import { getOuiDatabaseSingleton, getDeviceTypeFromMac } from '../../../utils/oui-util'
-import * as path from 'path'
+
 
 const execAsync = promisify(exec)
 
@@ -96,6 +97,11 @@ interface PowerShellScanResult {
 @Injectable()
 export class WindowsPowerShellService {
   private readonly logger = new Logger(WindowsPowerShellService.name)
+
+  constructor(
+    private readonly ouiService: OuiService,
+    private readonly deviceTypeService: DeviceTypeService,
+  ) {}
 
   async executePowerShellScan(config: PowerShellScanConfig): Promise<PowerShellScanResult> {
     try {
@@ -574,8 +580,6 @@ $output | ConvertTo-Json -Depth 10
   }
 
   async enrichDeviceInfo(device: Device): Promise<Device> {
-    // Charger la base OUI une seule fois
-    const ouiDb = getOuiDatabaseSingleton(path.resolve(__dirname, '../../../utils/oui-db.json'))
     // 1. MAC address (ARP)
     let macAddress = device.macAddress
     if (!macAddress) {
@@ -602,13 +606,11 @@ $output | ConvertTo-Json -Depth 10
         this.logger.debug(`[ENRICH] OS enrichi via PowerShell pour ${device.ipAddress}: ${os}`)
       }
     }
-    // 4. Type d'appareil via OUI
+    // 4. Type d'appareil via service centralisé
     let deviceType = device.deviceType
     if (macAddress) {
-      const ouiType = getDeviceTypeFromMac(macAddress, ouiDb)
-      if (ouiType) {
-        deviceType = this.mapStringToDeviceType(ouiType)
-      }
+      const detectionResult = this.deviceTypeService.detectDeviceType({ macAddress })
+      deviceType = detectionResult.deviceType
     }
     // 5. Fusion intelligente
     return {
@@ -763,3 +765,7 @@ $output | ConvertTo-Json -Depth 10
     }
   }
 }
+
+
+
+

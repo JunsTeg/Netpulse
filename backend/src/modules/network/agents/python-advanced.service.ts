@@ -1,9 +1,11 @@
-import { Injectable, Logger } from "@nestjs/common"
+import { Injectable, Logger } from '@nestjs/common';
+import { OuiService } from '../services/oui.service';
+import { DeviceTypeService } from '../services/device-type.service';
 import { exec } from "child_process"
 import { promisify } from "util"
 import { type Device, DeviceType, DeviceStatus, type ServiceInfo } from "../device.model"
-import { getOuiDatabaseSingleton, getDeviceTypeFromMac } from '../../../utils/oui-util'
 import * as path from 'path'
+import * as fs from 'fs'
 
 const execAsync = promisify(exec)
 
@@ -103,6 +105,11 @@ function isValidDeviceIP(ip: string, cidr: string): boolean {
 @Injectable()
 export class PythonAdvancedService {
   private readonly logger = new Logger(PythonAdvancedService.name)
+
+  constructor(
+    private readonly ouiService: OuiService,
+    private readonly deviceTypeService: DeviceTypeService,
+  ) {}
 
   async executePythonScan(config: PythonScanConfig): Promise<PythonScanResult> {
     try {
@@ -894,8 +901,6 @@ if __name__ == "__main__":
   }
 
   async enrichDeviceInfo(device: Device): Promise<Device> {
-    // Charger la base OUI une seule fois
-    const ouiDb = getOuiDatabaseSingleton(path.resolve(__dirname, '../../../utils/oui-db.json'))
     // 1. MAC address (ARP)
     let macAddress = device.macAddress
     if (!macAddress) {
@@ -922,13 +927,11 @@ if __name__ == "__main__":
         this.logger.debug(`[ENRICH] OS enrichi via Python pour ${device.ipAddress}: ${os}`)
       }
     }
-    // 4. Type d'appareil via OUI
+    // 4. Type d'appareil via service centralisé
     let deviceType = device.deviceType
     if (macAddress) {
-      const ouiType = getDeviceTypeFromMac(macAddress, ouiDb)
-      if (ouiType) {
-        deviceType = this.mapStringToDeviceType(ouiType)
-      }
+      const detectionResult = this.deviceTypeService.detectDeviceType({ macAddress })
+      deviceType = detectionResult.deviceType
     }
     // 5. Fusion intelligente
     return {
@@ -955,3 +958,7 @@ if __name__ == "__main__":
     return DeviceType.OTHER
   }
 }
+
+
+
+

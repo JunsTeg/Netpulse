@@ -3,6 +3,7 @@ import { exec } from "child_process"
 import { promisify } from "util"
 import type { Device } from "../device.model"
 import * as os from "os"
+import { NETWORK_TIMEOUTS } from '../../../config/network.config'
 
 const execAsync = promisify(exec)
 
@@ -40,7 +41,7 @@ export class TracerouteAgentService {
     return firstOctet >= 224 && firstOctet <= 239
   }
 
-  async execute(config: TracerouteConfig): Promise<TracerouteResult> {
+  async execute(config: TracerouteConfig & { deepMode?: boolean }): Promise<TracerouteResult> {
     try {
       // Ignorer les adresses multicast
       if (this.isMulticastIP(config.target)) {
@@ -54,9 +55,11 @@ export class TracerouteAgentService {
       }
 
       const isWindows = os.platform() === "win32"
+      const mode = config.deepMode ? 'complet' : 'rapide'
+      const { perHop, maxHops } = NETWORK_TIMEOUTS.traceroute[mode]
       const command = isWindows
-        ? `tracert -d -h ${config.maxHops || 30} -w ${config.timeout || 1000} ${config.target}`
-        : `traceroute -n -m ${config.maxHops || 30} -w ${config.timeout || 1} ${config.target}`
+        ? `tracert -d -h ${maxHops} -w ${perHop} ${config.target}`
+        : `traceroute -n -m ${maxHops} -w ${perHop / 1000} ${config.target}`
 
       this.logger.debug(`[TRACEROUTE] Commande executee: ${command}`)
       const { stdout } = await execAsync(command)
@@ -124,53 +127,5 @@ export class TracerouteAgentService {
         scanTime: new Date(),
       }
     }
-  }
-
-  // Fonction pour generer la topologie a partir des resultats traceroute
-  generateTopology(devices: Device[], tracerouteResults: TracerouteResult[]): any {
-    const topology = {
-      nodes: devices.map((device) => ({
-        id: device.id,
-        hostname: device.hostname,
-        ipAddress: device.ipAddress,
-        deviceType: device.deviceType,
-        stats: device.stats,
-      })),
-      links: [],
-    }
-
-    // Creation des liens a partir des resultats traceroute
-    tracerouteResults.forEach((result) => {
-      if (!result.success) return
-
-      for (let i = 0; i < result.hops.length - 1; i++) {
-        const currentHop = result.hops[i]
-        const nextHop = result.hops[i + 1]
-
-        // Trouver les appareils correspondants
-        const sourceDevice = devices.find((d) => d.ipAddress === currentHop.ip)
-        const targetDevice = devices.find((d) => d.ipAddress === nextHop.ip)
-
-        if (sourceDevice && targetDevice) {
-          // Verifier si le lien existe deja
-          const linkExists = topology.links.some(
-            (link) =>
-              (link.source === sourceDevice.id && link.target === targetDevice.id) ||
-              (link.source === targetDevice.id && link.target === sourceDevice.id),
-          )
-
-          if (!linkExists) {
-            topology.links.push({
-              source: sourceDevice.id,
-              target: targetDevice.id,
-              type: "gigabit", // Par defaut
-              bandwidth: "1Gbps", // Par defaut
-            })
-          }
-        }
-      }
-    })
-
-    return topology
   }
 }

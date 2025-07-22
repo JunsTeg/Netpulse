@@ -8,23 +8,10 @@ import * as snmp from "net-snmp"
 import { sequelize } from "../../../database"
 import { QueryTypes } from "sequelize"
 import { AppareilRepository } from "../appareil.repository"
-import * as path from "path"
-import * as fs from "fs"
-// Ajout des utilitaires IP
-// Supprimer l'import ipaddr.js
-// Ajouter la fonction utilitaire IPv4 CIDR
-// --- Ajout: Chargement du fichier oui-db.json ---
-const ouiDbPath = path.resolve(__dirname, '../../../utils/oui-db.json')
-let ouiDb: Record<string, string> = {}
-try {
-  const ouiRaw = fs.readFileSync(ouiDbPath, 'utf-8')
-  ouiDb = JSON.parse(ouiRaw)
-} catch (err) {
-  // Si le fichier n'est pas trouvé ou mal formé, on log l'erreur
-  // et on continue avec une base vide
-  console.error('[OUI] Erreur chargement oui-db.json:', err.message)
-  ouiDb = {}
-}
+import { OuiService } from "../services/oui.service"
+import { DeviceTypeService } from "../services/device-type.service"
+import pLimit from 'p-limit';
+import { NETWORK_TIMEOUTS } from '../../../config/network.config'
 // Supprimer l'import ipaddr.js
 // Ajouter la fonction utilitaire IPv4 CIDR
 function ipToInt(ip: string): number {
@@ -80,6 +67,8 @@ export class NmapAgentService {
 
   constructor(
     private readonly appareilRepository: AppareilRepository,
+    private readonly ouiService: OuiService,
+    private readonly deviceTypeService: DeviceTypeService,
   ) {}
 
   async execute(config: NmapScanConfig, userId?: string): Promise<NmapScanResult> {
@@ -108,23 +97,8 @@ export class NmapAgentService {
       await this.logAction(actionId, userId, "network_scan", `${enrichedDevices.length} appareils enrichis`)
 
       // 3. CRITIQUE: Upsert de tous les appareils AVANT de collecter les statistiques
-      const savedDevices: Device[] = []
-      for (const device of enrichedDevices) {
-        try {
-          // Upsert de l'appareil pour garantir son existence en base
-          const savedDeviceId = await this.appareilRepository.upsertDevice(device)
-          if (savedDeviceId) {
-            // Récupérer l'appareil avec l'ID réel de la base
-            const savedDevice = { ...device, id: savedDeviceId }
-            savedDevices.push(savedDevice)
-            this.logger.debug(`[SCAN] Appareil upserté: ${device.ipAddress} -> ID: ${savedDeviceId}`)
-          } else {
-            this.logger.warn(`[SCAN] Échec upsert pour appareil: ${device.ipAddress}`)
-          }
-        } catch (error) {
-          this.logger.error(`[SCAN] Erreur upsert appareil ${device.ipAddress}: ${error.message}`)
-        }
-      }
+      const upsertedIds = await this.appareilRepository.upsertMany(enrichedDevices)
+      const savedDevices: Device[] = enrichedDevices.map((d, i) => ({ ...d, id: upsertedIds[i] || d.id }))
 
       // 4. Collecte des statistiques pour chaque appareil SAUVEGARDÉ
       for (const device of savedDevices) {
@@ -238,43 +212,33 @@ export class NmapAgentService {
     }
   }
 
-  private async executeQuickScan(network: string): Promise<Device[]> {
+  // Ajout d'un paramètre optionnel pour le mode (rapide/complet)
+  private async executeQuickScan(network: string, deepMode = false): Promise<Device[]> {
     try {
       this.logger.log(`[SCAN] Démarrage scan du réseau: ${network}`)
-      
-      // Commande nmap améliorée pour Windows - scan plus agressif
       const isWindows = os.platform() === "win32"
+      const mode = deepMode ? 'complet' : 'rapide'
+      const { hostTimeout, maxRetries, timing } = NETWORK_TIMEOUTS.nmap[mode]
       let nmapCommand: string
-      
       if (isWindows) {
-        // Commande Windows optimisée - scan plus agressif
-        nmapCommand = `nmap -sn -PE -PP -PS21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -PA21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T4 --max-retries 3 --host-timeout 15s ${network}`
+        nmapCommand = `nmap -sn -PE -PP -PS21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -PA21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T${timing} --max-retries ${maxRetries} --host-timeout ${hostTimeout}ms ${network}`
       } else {
-        // Commande Linux/Mac - scan plus agressif
-        nmapCommand = `nmap -sn -PE -PP -PS21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -PA21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T4 --max-retries 3 --host-timeout 15s ${network}`
+        nmapCommand = `nmap -sn -PE -PP -PS21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -PA21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T${timing} --max-retries ${maxRetries} --host-timeout ${hostTimeout}ms ${network}`
       }
-
       this.logger.log(`[SCAN] Commande nmap: ${nmapCommand}`)
-      
       const { stdout, stderr } = await execAsync(nmapCommand)
-      
       this.logger.log(`[SCAN] Sortie nmap (${stdout.length} caractères):`)
       this.logger.log(`[SCAN] ${stdout.substring(0, 500)}...`)
-      
       if (stderr) {
         this.logger.warn(`[SCAN] Stderr nmap: ${stderr}`)
       }
-      
       let devices = this.parseNmapOutput(stdout, network)
       this.logger.log(`[SCAN] Appareils trouvés après scan ping: ${devices.length}`)
-      
       // Si peu d'appareils trouvés, essayer un scan de ports
       if (devices.length <= 1) {
         this.logger.log(`[SCAN] Peu d'appareils trouvés, tentative de scan de ports...`)
-        const portScanDevices = await this.executePortScan(network)
+        const portScanDevices = await this.executePortScan(network, deepMode)
         this.logger.log(`[SCAN] Appareils trouvés après scan de ports: ${portScanDevices.length}`)
-        
-        // Fusionner les résultats en évitant les doublons
         const allDevices = [...devices]
         for (const portDevice of portScanDevices) {
           if (!allDevices.find(d => d.ipAddress === portDevice.ipAddress)) {
@@ -283,14 +247,11 @@ export class NmapAgentService {
         }
         devices = allDevices
       }
-      
       // Si toujours peu d'appareils, essayer un scan ARP
       if (devices.length <= 1) {
         this.logger.log(`[SCAN] Peu d'appareils trouvés, tentative de scan ARP...`)
         const arpDevices = await this.executeArpScan(network)
         this.logger.log(`[SCAN] Appareils trouvés après scan ARP: ${arpDevices.length}`)
-        
-        // Fusionner les résultats en évitant les doublons
         const allDevices = [...devices]
         for (const arpDevice of arpDevices) {
           if (!allDevices.find(d => d.ipAddress === arpDevice.ipAddress)) {
@@ -299,37 +260,30 @@ export class NmapAgentService {
         }
         devices = allDevices
       }
-      
       this.logger.log(`[SCAN] Total appareils trouvés: ${devices.length}`)
       return devices
     } catch (error) {
       this.logger.error(`[SCAN] Erreur scan nmap: ${error.message}`)
-      this.logger.error(`[SCAN] Commande qui a échoué: nmap -sn -PE -PP -PS21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -PA21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T4 --max-retries 3 --host-timeout 15s ${network}`)
       return []
     }
   }
 
-  private async executePortScan(network: string): Promise<Device[]> {
+  private async executePortScan(network: string, deepMode = false): Promise<Device[]> {
     try {
       this.logger.log(`[SCAN] Démarrage scan de ports du réseau: ${network}`)
-      
-      // Scan de ports rapide sur les ports les plus courants
       const isWindows = os.platform() === "win32"
+      const mode = deepMode ? 'complet' : 'rapide'
+      const { hostTimeout, maxRetries, timing } = NETWORK_TIMEOUTS.nmap[mode]
       const nmapCommand = isWindows
-        ? `nmap -sS -p 21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T4 --max-retries 2 --host-timeout 10s ${network}`
-        : `nmap -sS -p 21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T4 --max-retries 2 --host-timeout 10s ${network}`
-
+        ? `nmap -sS -p 21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T${timing} --max-retries ${maxRetries} --host-timeout ${hostTimeout}ms ${network}`
+        : `nmap -sS -p 21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T${timing} --max-retries ${maxRetries} --host-timeout ${hostTimeout}ms ${network}`
       this.logger.log(`[SCAN] Commande scan de ports: ${nmapCommand}`)
-      
       const { stdout, stderr } = await execAsync(nmapCommand)
-      
       if (stderr) {
         this.logger.warn(`[SCAN] Stderr scan de ports: ${stderr}`)
       }
-      
       const devices = this.parseNmapPortScanOutput(stdout)
       this.logger.log(`[SCAN] Appareils trouvés par scan de ports: ${devices.length}`)
-      
       return devices
     } catch (error) {
       this.logger.error(`[SCAN] Erreur scan de ports: ${error.message}`)
@@ -420,9 +374,11 @@ export class NmapAgentService {
   }
 
   public async enrichBasicInfo(devices: Device[]): Promise<Device[]> {
-    // --- Remplacer la logique OUI par la fonction locale ---
+    const limit = pLimit(5); // Limite à 5 enrichissements en parallèle
+    const start = Date.now();
+    this.logger.log(`[ENRICH] Début enrichissement de ${devices.length} devices (max 5 en parallèle)`);
     const enrichedDevices = await Promise.all(
-      devices.map(async (device) => {
+      devices.map(device => limit(async () => {
         try {
           // 1. MAC address (ARP)
           let macAddress = device.macAddress
@@ -450,13 +406,29 @@ export class NmapAgentService {
               this.logger.debug(`[ENRICH] OS enrichi via Nmap pour ${device.ipAddress}: ${os}`)
             }
           }
-          // 4. Type d'appareil via OUI
+          // 3.5. Scan de ports rapide pour améliorer la détection de type
+          let openPorts: number[] = []
+          if (!device.stats.services || device.stats.services.length === 0) {
+            try {
+              openPorts = await this.getOpenPorts(device.ipAddress)
+              this.logger.debug(`[ENRICH] Ports ouverts détectés pour ${device.ipAddress}: ${openPorts.join(', ')}`)
+            } catch (error) {
+              this.logger.debug(`[ENRICH] Erreur scan ports pour ${device.ipAddress}: ${error.message}`)
+            }
+          } else {
+            openPorts = device.stats.services.map(s => s.port)
+          }
+          // 4. Type d'appareil via service centralisé (APRÈS enrichissement OS/hostname/ports)
           let deviceType = device.deviceType
           if (macAddress) {
-            const ouiType = getDeviceTypeFromMacLocal(macAddress)
-            if (ouiType) {
-              deviceType = this.mapStringToDeviceType(ouiType)
-            }
+            const detectionResult = this.deviceTypeService.detectDeviceType({
+              macAddress,
+              openPorts: openPorts,
+              hostname: hostname, // ← Utiliser le hostname enrichi
+              os: os              // ← Utiliser l'OS enrichi
+            })
+            deviceType = detectionResult.deviceType
+            this.logger.debug(`[ENRICH] Type d'appareil détecté pour ${device.ipAddress}: ${deviceType} (méthode: ${detectionResult.method}, confiance: ${detectionResult.confidence})`)
           }
           // 5. Fusion intelligente
           const enrichedDevice: Device = {
@@ -465,6 +437,14 @@ export class NmapAgentService {
             macAddress: macAddress || device.macAddress,
             os: os || device.os,
             deviceType: deviceType || device.deviceType,
+            stats: {
+              ...device.stats,
+              services: openPorts.length > 0 ? openPorts.map(port => ({
+                port,
+                protocol: 'tcp' as const,
+                service: this.getServiceName(port)
+              })) : device.stats.services
+            },
             lastSeen: new Date(),
             firstDiscovered: device.firstDiscovered || new Date(),
           }
@@ -473,9 +453,74 @@ export class NmapAgentService {
           this.logger.error(`[SCAN] Erreur enrichissement info ${device.ipAddress}: ${error.message}`)
           return device
         }
-      }),
-    )
-    return enrichedDevices
+      }))
+    );
+    const duration = Date.now() - start;
+    this.logger.log(`[ENRICH] Enrichissement terminé (${devices.length} devices) en ${duration} ms.`);
+    return enrichedDevices;
+  }
+
+  /**
+   * Récupère les ports ouverts pour une IP donnée
+   */
+  private async getOpenPorts(ipAddress: string, deepMode = false): Promise<number[]> {
+    try {
+      const isWindows = os.platform() === "win32"
+      const mode = deepMode ? 'complet' : 'rapide'
+      const { hostTimeout, maxRetries, timing } = NETWORK_TIMEOUTS.nmap[mode]
+      const nmapCommand = isWindows
+        ? `nmap -sS -p 21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T${timing} --max-retries ${maxRetries} --host-timeout ${hostTimeout}ms ${ipAddress}`
+        : `nmap -sS -p 21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T${timing} --max-retries ${maxRetries} --host-timeout ${hostTimeout}ms ${ipAddress}`
+      const { stdout } = await execAsync(nmapCommand)
+      
+      // Parser les ports ouverts depuis la sortie nmap
+      const openPorts: number[] = []
+      const lines = stdout.split('\n')
+      
+      for (const line of lines) {
+        const portMatch = line.match(/(\d+)\/(tcp|udp)\s+(open|filtered)/)
+        if (portMatch) {
+          const port = parseInt(portMatch[1])
+          const status = portMatch[3]
+          if (status === 'open') {
+            openPorts.push(port)
+          }
+        }
+      }
+      
+      return openPorts
+    } catch (error) {
+      this.logger.debug(`[PORTS] Erreur scan ports ${ipAddress}: ${error.message}`)
+      return []
+    }
+  }
+
+  /**
+   * Retourne le nom du service pour un port donné
+   */
+  private getServiceName(port: number): string {
+    const serviceMap: Record<number, string> = {
+      21: 'ftp',
+      22: 'ssh',
+      23: 'telnet',
+      25: 'smtp',
+      53: 'dns',
+      80: 'http',
+      110: 'pop3',
+      111: 'rpcbind',
+      135: 'msrpc',
+      139: 'netbios-ssn',
+      143: 'imap',
+      443: 'https',
+      993: 'imaps',
+      995: 'pop3s',
+      1723: 'pptp',
+      3306: 'mysql',
+      3389: 'ms-wbt-server',
+      5900: 'vnc',
+      8080: 'http-proxy'
+    }
+    return serviceMap[port] || 'unknown'
   }
 
   private async getMACAddress(ip: string): Promise<string> {
@@ -504,28 +549,11 @@ export class NmapAgentService {
   private detectDeviceType(macAddress: string): DeviceType {
     if (!macAddress) return DeviceType.OTHER
 
-    const macPrefix = macAddress.substring(0, 8).toUpperCase()
-
-    // Detection basique du type d'appareil basé sur le prefixe MAC
-    if (macPrefix.startsWith("00:50:56") || macPrefix.startsWith("00:0C:29")) {
-      return DeviceType.SERVER // Machines virtuelles
-    } else if (macPrefix.startsWith("B8:27:EB") || macPrefix.startsWith("DC:A6:32")) {
-      return DeviceType.SERVER // Raspberry Pi
-    } else if (macPrefix.startsWith("00:1A:79")) {
-      return DeviceType.ROUTER
-    } else if (macPrefix.startsWith("00:1B:63") || macPrefix.startsWith("00:1C:B3")) {
-      return DeviceType.SWITCH
-    } else if (macPrefix.startsWith("00:1A:2B") || macPrefix.startsWith("00:1C:0E")) {
-      return DeviceType.AP
-    } else if (macPrefix.startsWith("00:1E:8C") || macPrefix.startsWith("00:1F:3F")) {
-      return DeviceType.LAPTOP
-    } else if (macPrefix.startsWith("00:1D:7D") || macPrefix.startsWith("00:1F:5B")) {
-      return DeviceType.DESKTOP
-    } else if (macPrefix.startsWith("00:1E:8C") || macPrefix.startsWith("00:1F:3F")) {
-      return DeviceType.MOBILE
-    }
-
-    return DeviceType.OTHER
+    const detectionResult = this.deviceTypeService.detectDeviceType({
+      macAddress
+    })
+    
+    return detectionResult.deviceType
   }
 
   private parseNmapOutput(stdout: string, cidr: string): Device[] {
@@ -1086,7 +1114,7 @@ export class NmapAgentService {
     }
   }
 
-  // Map string (OUI type ou vendor) vers DeviceType enum
+  // Map string (OUI type ou vendor) vers DeviceType enum - DÉPRÉCIÉ, utiliser DeviceTypeService
   private mapStringToDeviceType(type: string): DeviceType {
     if (!type) return DeviceType.OTHER
     const t = type.toLowerCase()
@@ -1100,13 +1128,11 @@ export class NmapAgentService {
     if (t.includes('printer')) return DeviceType.PRINTER
     return DeviceType.OTHER
   }
-}
 
-// --- Ajout: Fonction locale pour déterminer le constructeur à partir de l'adresse MAC ---
-function getDeviceTypeFromMacLocal(macAddress: string): string | undefined {
-  if (!macAddress) return undefined
-  // Normaliser le format MAC (3 premiers octets, majuscules, séparés par ':')
-  const cleanMac = macAddress.replace(/-/g, ':').toUpperCase()
-  const oui = cleanMac.split(':').slice(0, 3).join(':')
-  return ouiDb[oui]
+  // Ajout d'un setter pour le mode profond sur la config SNMP
+  setSnmpMode(deepMode: boolean) {
+    const mode = deepMode ? 'complet' : 'rapide'
+    this.snmpConfig.timeout = NETWORK_TIMEOUTS.snmp[mode].timeout
+    this.snmpConfig.retries = NETWORK_TIMEOUTS.snmp[mode].retries
+  }
 }

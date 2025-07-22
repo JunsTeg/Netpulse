@@ -172,6 +172,56 @@ export class AppareilRepository {
   }
 
   /**
+   * Upsert (insert ou update) en batch pour plusieurs appareils
+   */
+  async upsertMany(devices: Device[], batchSize = 200): Promise<string[]> {
+    const insertedIds: string[] = []
+    if (!Array.isArray(devices) || devices.length === 0) return insertedIds
+    try {
+      // Découpage en batchs si trop d'appareils
+      for (let i = 0; i < devices.length; i += batchSize) {
+        const batch = devices.slice(i, i + batchSize)
+        // Préparation des valeurs et des champs
+        const values = batch.map(device => {
+          // Valeurs par défaut et nettoyage
+          if (!device.stats || typeof device.stats !== 'object') {
+            device.stats = { cpu: 0, memory: 0, uptime: "0", status: DeviceStatus.INACTIVE, services: [] }
+          }
+          return `('${device.id || uuidv4()}',
+            ${sequelize.escape(device.hostname)},
+            ${sequelize.escape(device.ipAddress)},
+            ${sequelize.escape(device.macAddress)},
+            ${sequelize.escape(device.os)},
+            ${sequelize.escape(device.deviceType)},
+            ${sequelize.escape(JSON.stringify(device.stats))},
+            ${sequelize.escape(device.lastSeen)},
+            ${sequelize.escape(device.firstDiscovered || new Date())},
+            TRUE)`
+        }).join(',\n')
+        // Construction de la requête
+        const sql = `INSERT INTO appareils
+          (id, hostname, ipAddress, macAddress, os, deviceType, stats, lastSeen, firstDiscovered, isActive)
+          VALUES ${values}
+          ON DUPLICATE KEY UPDATE
+            hostname = VALUES(hostname),
+            macAddress = VALUES(macAddress),
+            os = VALUES(os),
+            deviceType = VALUES(deviceType),
+            stats = VALUES(stats),
+            lastSeen = VALUES(lastSeen),
+            isActive = TRUE`;
+        await sequelize.query(sql, { type: QueryTypes.INSERT })
+        insertedIds.push(...batch.map(d => d.id))
+        this.logger.log(`[BATCH UPSERT] ${batch.length} appareils insérés/mis à jour.`)
+      }
+      return insertedIds
+    } catch (error) {
+      this.logger.error(`[BATCH UPSERT] Erreur batch upsert: ${error.message}`)
+      return insertedIds
+    }
+  }
+
+  /**
    * Désactive tous les appareils qui ne sont pas dans la liste des IDs détectés
    */
   async disableMissingDevices(detectedIds: string[]): Promise<void> {

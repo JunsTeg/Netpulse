@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { NetworkModule } from './modules/network/network.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { TopologyModule } from './modules/topology';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     AuthModule,
     UsersModule,
     NetworkModule,
+    TopologyModule,
   ],
   controllers: [AppController],
   providers: [

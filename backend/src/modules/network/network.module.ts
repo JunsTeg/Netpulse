@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common"
+import { Module, forwardRef } from "@nestjs/common"
 import { ScheduleModule } from "@nestjs/schedule"
 import { NetworkService } from "./network.service"
 import { EnhancedNetworkService } from "./enhanced-network.service"
@@ -14,14 +14,24 @@ import { NetworkGateway } from "./network.gateway"
 import { AuthModule } from "../../auth/auth.module"
 import { JwtStrategy } from "../../auth/strategies/jwt.strategy"
 import { AppareilRepository } from "./appareil.repository"
+// Nouveaux services centralisés
+import { OuiService } from "./services/oui.service"
+import { DeviceTypeService } from "./services/device-type.service"
+import { TopologyModule } from '../topology/topology.module';
+import { TopologyService } from '../topology/topology.service';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    AuthModule
+    AuthModule,
+    forwardRef(() => TopologyModule),
   ],
   controllers: [NetworkController],
   providers: [
+    // Services centralisés (priorité élevée)
+    OuiService,
+    DeviceTypeService,
+    
     // Services d'agents (dépendances de base)
     NmapAgentService,
     TracerouteAgentService,
@@ -43,14 +53,22 @@ import { AppareilRepository } from "./appareil.repository"
     // Stratégie JWT pour l'authentification
     JwtStrategy,
     AppareilRepository,
+    TopologyService,
   ],
   exports: [
+    // Services centralisés
+    OuiService,
+    DeviceTypeService,
+    
+    // Services principaux
     NetworkService,
     EnhancedNetworkService,
     NetworkDetectorService,
     WindowsPowerShellService,
     PythonAdvancedService,
     RouterQueryService,
+    TracerouteAgentService,
+    TopologyService,
   ],
 })
 export class NetworkModule {}

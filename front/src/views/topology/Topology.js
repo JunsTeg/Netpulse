@@ -990,6 +990,25 @@ const Topology = () => {
     return bandwidth.replace('bps', 'bits/s')
   }
 
+  // Supprimer la fonction generateTopologyFromDevices et tout fallback local
+  // Adapter le bouton pour appeler /api/network/generate-topology
+  const regenerateTopology = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await axios.post('/api/network/generate-topology');
+      if (response.data && response.data.success) {
+        await fetchTopology();
+      } else {
+        setError('Erreur lors de la régénération de la topologie.');
+      }
+    } catch (err) {
+      setError('Erreur lors de la régénération : ' + (err.response?.data?.message || err.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       <CCard className="mb-4 topology-card" style={themeStyles.card}>
@@ -1023,7 +1042,7 @@ const Topology = () => {
                   <CButton 
                     color="info" 
                     variant="outline" 
-                    onClick={generateTopologyFromDevices}
+                    onClick={regenerateTopology}
                     disabled={loading}
                   >
                     <CIcon icon={cilDevices} />

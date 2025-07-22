@@ -4,6 +4,7 @@ import { TracerouteAgentService } from "./agents/traceroute.service"
 import { NetstatAgentService } from "./agents/netstat.service"
 import type { Device, NmapScanConfig, NmapScanResult } from "./device.model"
 import type { NetworkTopologyData } from "./network.types"
+import pLimit from 'p-limit';
 
 @Injectable()
 export class NetworkService {
@@ -33,35 +34,6 @@ export class NetworkService {
       return result
     } catch (error) {
       this.logger.error(`[NETWORK] Erreur scan: ${error.message}`)
-      throw error
-    }
-  }
-
-  async getNetworkTopology(devices: Device[]): Promise<NetworkTopologyData> {
-    try {
-      this.logger.log(`[TOPOLOGY] Génération topologie pour ${devices.length} appareils`)
-
-      // Exécution de traceroutes pour découvrir la topologie
-      const tracerouteResults = await Promise.all(
-        devices.map((device) => this.tracerouteAgent.execute({ target: device.ipAddress })),
-      )
-
-      // Génération de la topologie
-      const topology = this.tracerouteAgent.generateTopology(devices, tracerouteResults)
-
-      return {
-        devices: topology.nodes,
-        connections: topology.links,
-        stats: {
-          totalDevices: devices.length,
-          activeDevices: devices.filter((d) => d.stats.status === "active").length,
-          averageLatency: this.calculateAverageLatency(devices),
-          averagePacketLoss: 0,
-          totalBandwidth: { download: 0, upload: 0 },
-        },
-      }
-    } catch (error) {
-      this.logger.error(`[TOPOLOGY] Erreur génération topologie: ${error.message}`)
       throw error
     }
   }

@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-07-20T21:52:30.002Z",
+  "version": "1.0.0",
+  "description": "Migration vers la centralisation OUI",
+  "filesMigrated": [
+    {
+      "file": "src/modules/network/agents/python-advanced.service.ts",
+      "success": true,
+      "timestamp": "2025-07-20T21:52:30.088Z"
+    },
+    {
+      "file": "src/modules/network/agents/windows-powershell.service.ts",
+      "success": true,
+      "timestamp": "2025-07-20T21:52:30.137Z"
+    },
+    {
+      "file": "src/modules/network/agents/router-query.service.ts",
+      "success": true,
+      "timestamp": "2025-07-20T21:52:30.167Z"
+    }
+  ],
+  "errors": []
+}
