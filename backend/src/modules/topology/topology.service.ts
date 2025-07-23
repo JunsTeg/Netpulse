@@ -10,8 +10,20 @@ export class TopologyService {
     private readonly tracerouteAgent: TracerouteAgentService,
   ) {}
 
-  async generateTopology(devices: any[]): Promise<any> {
-    // Filtrage intelligent : routeurs, serveurs, nouveaux devices
+  async generateTopology(devices: any[], gatewayIp?: string): Promise<any> {
+    // Détection automatique de la gateway si non fournie
+    if (!gatewayIp) {
+      // Tentative de déduction de la gateway la plus probable
+      // On prend la première ip de type router ou server, ou .1 du réseau
+      const router = devices.find(d => (d.deviceType || '').toLowerCase() === 'router')
+      if (router) gatewayIp = router.ipAddress
+      else if (devices.length > 0) {
+        const ipParts = devices[0].ipAddress.split('.')
+        gatewayIp = `${ipParts[0]}.${ipParts[1]}.${ipParts[2]}.1`
+      }
+    }
+    let centralNodeId = null;
+    // Définir la fonction isRelevant AVANT son utilisation
     const isRelevant = (d: any) => {
       const type = (d.deviceType || '').toLowerCase();
       const isCore = type === 'router' || type === 'server';
@@ -22,59 +34,117 @@ export class TopologyService {
       })();
       return isCore || isNew;
     };
+    // Générer les nœuds avec marquage central et support isVirtual
+    const nodes: Array<any & { isVirtual?: boolean }> = devices.map(device => {
+      const isCentral = device.ipAddress === gatewayIp;
+      if (isCentral) centralNodeId = device.id;
+      return {
+        id: device.id,
+        hostname: device.hostname,
+        ipAddress: device.ipAddress,
+        deviceType: device.deviceType,
+        stats: device.stats || {},
+        lastSeen: device.lastSeen,
+        firstDiscovered: device.firstDiscovered,
+        macAddress: device.macAddress,
+        os: device.os,
+        isCentral,
+        isVirtual: false,
+      };
+    });
+    // Si la gateway n'est pas dans la liste, on l'ajoute comme nœud virtuel
+    if (!centralNodeId && gatewayIp) {
+      const virtualGateway = {
+        id: 'gateway',
+        hostname: 'Gateway',
+        ipAddress: gatewayIp,
+        deviceType: 'router',
+        stats: {},
+        lastSeen: null,
+        firstDiscovered: null,
+        macAddress: null,
+        os: null,
+        isCentral: true,
+        isVirtual: true,
+      };
+      nodes.push(virtualGateway);
+      centralNodeId = 'gateway';
+    }
+    // --- Correction : enrichir la liste des nœuds avec tous les hops vus dans les traceroutes ---
+    // 1. Collecter tous les hops de tous les traceroutes
+    const allTracerouteHops = new Set<string>();
     const relevantDevices = devices.filter(isRelevant);
-    // Lancer les traceroutes en parallèle (limité à 5)
-    const limit = 5;
     const tracerouteResults = await Promise.all(
       relevantDevices.map(device => this.tracerouteAgent.execute({ target: device.ipAddress, deepMode: false }))
     );
-    // Générer les liens à partir des résultats de traceroute
+    tracerouteResults.forEach((result) => {
+      if (!result.success) return;
+      result.hops.forEach(hop => {
+        if (hop.ip) allTracerouteHops.add(hop.ip);
+      });
+    });
+    // 2. Ajouter un nœud virtuel pour chaque hop inconnu
+    allTracerouteHops.forEach(ip => {
+      if (!nodes.some(n => n.ipAddress === ip)) {
+        nodes.push({
+          id: `virtual-${ip}`,
+          hostname: `Noeud ${ip}`,
+          ipAddress: ip,
+          deviceType: 'unknown',
+          stats: {},
+          lastSeen: null,
+          firstDiscovered: null,
+          macAddress: null,
+          os: null,
+          isCentral: false,
+          isVirtual: true,
+        });
+      }
+    });
+    // 3. Générer les liens à partir des hops (chaque segment)
     const links: any[] = [];
     tracerouteResults.forEach((result) => {
       if (!result.success) return;
       for (let i = 0; i < result.hops.length - 1; i++) {
         const currentHop = result.hops[i];
         const nextHop = result.hops[i + 1];
-        // Trouver les appareils correspondants
-        const sourceDevice = devices.find((d: any) => d.ipAddress === currentHop.ip);
-        const targetDevice = devices.find((d: any) => d.ipAddress === nextHop.ip);
-        if (sourceDevice && targetDevice) {
-          // Vérifier si le lien existe déjà
+        // Trouver les nœuds (réels ou virtuels)
+        const sourceNode = nodes.find((n: any) => n.ipAddress === currentHop.ip);
+        const targetNode = nodes.find((n: any) => n.ipAddress === nextHop.ip);
+        if (sourceNode && targetNode) {
           const linkExists = links.some(
             (link) =>
-              (link.source === sourceDevice.id && link.target === targetDevice.id) ||
-              (link.source === targetDevice.id && link.target === sourceDevice.id)
+              (link.source === sourceNode.id && link.target === targetNode.id) ||
+              (link.source === targetNode.id && link.target === sourceNode.id)
           );
           if (!linkExists) {
             links.push({
-              source: sourceDevice.id,
-              target: targetDevice.id,
+              source: sourceNode.id,
+              target: targetNode.id,
               type: 'LAN',
               bandwidth: '1Gbps',
+              isVirtual: sourceNode.isVirtual || targetNode.isVirtual || false,
             });
           }
         }
       }
     });
-    // Générer les nœuds
-    const nodes = devices.map(device => ({
-      id: device.id,
-      hostname: device.hostname,
-      ipAddress: device.ipAddress,
-      deviceType: device.deviceType,
-      stats: device.stats || {},
-      lastSeen: device.lastSeen,
-      firstDiscovered: device.firstDiscovered,
-      macAddress: device.macAddress,
-      os: device.os,
-    }));
     // Statistiques
     const stats = {
       totalDevices: nodes.length,
       totalLinks: links.length,
       activeDevices: nodes.filter(n => n.stats.status === 'active').length,
+      centralNodeId,
+      gatewayIp,
     };
-    const topology = { nodes, links, stats };
+    // Ajout des champs generatedAt et source
+    const topology = {
+      nodes,
+      links,
+      stats,
+      generatedAt: new Date().toISOString(),
+      source: 'manual', // ou 'scan' si besoin
+    };
     // Persistance : désactiver les anciennes, insérer la nouvelle
     await sequelize.query(
       `UPDATE topologie_reseau SET isActive = FALSE WHERE isActive = TRUE`,

@@ -394,12 +394,29 @@ export class NetworkController {
 
   @Post('generate-topology')
   async generateTopologyManually() {
-    const allDevices = await this.appareilRepository.findAllDevices();
-    // On filtre les actifs via le champ brut
-    const devices = allDevices.filter((d: any) => d.isActive === true || d.isActive === 1);
-    const topology = await this.topologyService.generateTopology(devices);
-    // TODO: persister la topologie générée
-    return { success: true, data: topology };
+    try {
+      const allDevices = await this.appareilRepository.findAllDevices();
+      const devices = allDevices.filter((d: any) => d.isActive === true || d.isActive === 1);
+
+      if (!devices || devices.length === 0) {
+        throw new HttpException("Aucun appareil actif trouvé, impossible de générer la topologie", HttpStatus.BAD_REQUEST);
+      }
+
+      // La topologie est générée ET persistée dans le service
+      const topology = await this.topologyService.generateTopology(devices);
+
+      // Ajout d'un champ generatedAt et source pour la traçabilité
+      const responseTopology = {
+        ...topology,
+        generatedAt: new Date().toISOString(),
+        source: 'manual',
+      };
+
+      return { success: true, data: responseTopology };
+    } catch (error) {
+      this.logger.error(`[CONTROLLER] Erreur génération topologie: ${error.message}`);
+      throw new HttpException("Erreur lors de la génération de la topologie: " + (error.message || error), HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   @Get("/dashboard/summary")
@@ -765,7 +782,18 @@ export class NetworkController {
         if (!wifiOrEthRegex.test(name)) continue
         for (const net of nets) {
           if (net.family === 'IPv4' && !net.internal && net.address) {
-            const ipParts = net.address.split('.')
+            // Exclusion des plages 10.0.0.0/8 et 172.16.0.0/12
+            const ip = net.address
+            if (
+              ip.startsWith('10.') ||
+              (ip.startsWith('172.') && (() => {
+                const second = parseInt(ip.split('.')[1], 10)
+                return second >= 16 && second <= 31
+              })())
+            ) {
+              continue // On saute cette IP
+            }
+            const ipParts = ip.split('.')
             const networkPrefix = ipParts.slice(0, 3).join('.')
             const cidr = `${networkPrefix}.0/24`
             candidates.push({

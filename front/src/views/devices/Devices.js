@@ -105,9 +105,9 @@ const Devices = () => {
     const now = new Date()
     const diffMinutes = (now - lastSeenDate) / (1000 * 60)
 
-    if (diffMinutes < 5) return { status: 'actif', icon: cilCheckCircle, color: 'success' }
-    if (diffMinutes < 30) return { status: 'attention', icon: cilWarning, color: 'warning' }
-    return { status: 'inactif', icon: cilXCircle, color: 'danger' }
+    if (diffMinutes < 5) return { status: 'Actif', icon: cilCheckCircle, color: 'success' }
+    if (diffMinutes < 30) return { status: 'Attention', icon: cilWarning, color: 'warning' }
+    return { status: 'Inactif', icon: cilXCircle, color: 'danger' }
   }
 
   // Fonction pour charger les appareils depuis l'API

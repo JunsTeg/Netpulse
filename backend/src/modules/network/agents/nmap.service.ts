@@ -89,7 +89,7 @@ export class NmapAgentService {
 
       // 1. Scan rapide du reseau local uniquement
       await this.logAction(actionId, userId, "network_scan", `Scan du réseau ${config.target}`)
-      const nmapDevices = await this.executeQuickScan(config.target)
+      const nmapDevices = await this.executeQuickScan(config.target, config.deepMode, config.customPorts)
       this.logger.log(`[SCAN] Appareils trouves: ${nmapDevices.length}`)
 
       // 2. Enrichissement des informations de base
@@ -212,82 +212,88 @@ export class NmapAgentService {
     }
   }
 
+  private getOptimizedPorts(deepMode: boolean, customPorts?: string | number[]): string {
+    // Liste discriminante rapide
+    const fastPorts = [22, 80, 443, 445, 3389, 515, 9100, 161, 8080];
+    // Liste plus large pour le mode complet
+    const fullPorts = [21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 993, 995, 1723, 3306, 3389, 5900, 8080, 515, 9100, 161];
+    if (customPorts) {
+      if (Array.isArray(customPorts)) return customPorts.join(',');
+      if (typeof customPorts === 'string') return customPorts;
+    }
+    return (deepMode ? fullPorts : fastPorts).join(',');
+  }
+
   // Ajout d'un paramètre optionnel pour le mode (rapide/complet)
-  private async executeQuickScan(network: string, deepMode = false): Promise<Device[]> {
+  private async executeQuickScan(network: string, deepMode = false, customPorts?: string | number[]): Promise<Device[]> {
     try {
-      this.logger.log(`[SCAN] Démarrage scan du réseau: ${network}`)
-      const isWindows = os.platform() === "win32"
-      const mode = deepMode ? 'complet' : 'rapide'
-      const { hostTimeout, maxRetries, timing } = NETWORK_TIMEOUTS.nmap[mode]
-      let nmapCommand: string
-      if (isWindows) {
-        nmapCommand = `nmap -sn -PE -PP -PS21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -PA21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T${timing} --max-retries ${maxRetries} --host-timeout ${hostTimeout}ms ${network}`
-      } else {
-        nmapCommand = `nmap -sn -PE -PP -PS21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -PA21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T${timing} --max-retries ${maxRetries} --host-timeout ${hostTimeout}ms ${network}`
-      }
-      this.logger.log(`[SCAN] Commande nmap: ${nmapCommand}`)
-      const { stdout, stderr } = await execAsync(nmapCommand)
-      this.logger.log(`[SCAN] Sortie nmap (${stdout.length} caractères):`)
-      this.logger.log(`[SCAN] ${stdout.substring(0, 500)}...`)
+      this.logger.log(`[SCAN] Démarrage scan du réseau: ${network}`);
+      const isWindows = os.platform() === "win32";
+      const mode = deepMode ? 'complet' : 'rapide';
+      const { hostTimeout, maxRetries, timing } = NETWORK_TIMEOUTS.nmap[mode];
+      const ports = this.getOptimizedPorts(deepMode, customPorts);
+      let nmapCommand: string;
+      nmapCommand = `nmap -sn -PE -PP -PS${ports} -PA${ports} -T5 --min-parallelism 100 --max-parallelism 256 --max-retries 1 --host-timeout 500ms ${network}`;
+      this.logger.log(`[SCAN] Commande nmap: ${nmapCommand}`);
+      const { stdout, stderr } = await execAsync(nmapCommand);
+      this.logger.log(`[SCAN] Sortie nmap (${stdout.length} caractères):`);
+      this.logger.log(`[SCAN] ${stdout.substring(0, 500)}...`);
       if (stderr) {
-        this.logger.warn(`[SCAN] Stderr nmap: ${stderr}`)
+        this.logger.warn(`[SCAN] Stderr nmap: ${stderr}`);
       }
-      let devices = this.parseNmapOutput(stdout, network)
-      this.logger.log(`[SCAN] Appareils trouvés après scan ping: ${devices.length}`)
-      // Si peu d'appareils trouvés, essayer un scan de ports
+      let devices = this.parseNmapOutput(stdout, network);
+      this.logger.log(`[SCAN] Appareils trouvés après scan ping: ${devices.length}`);
       if (devices.length <= 1) {
-        this.logger.log(`[SCAN] Peu d'appareils trouvés, tentative de scan de ports...`)
-        const portScanDevices = await this.executePortScan(network, deepMode)
-        this.logger.log(`[SCAN] Appareils trouvés après scan de ports: ${portScanDevices.length}`)
-        const allDevices = [...devices]
+        this.logger.log(`[SCAN] Peu d'appareils trouvés, tentative de scan de ports...`);
+        const portScanDevices = await this.executePortScan(network, deepMode, customPorts);
+        this.logger.log(`[SCAN] Appareils trouvés après scan de ports: ${portScanDevices.length}`);
+        const allDevices = [...devices];
         for (const portDevice of portScanDevices) {
           if (!allDevices.find(d => d.ipAddress === portDevice.ipAddress)) {
-            allDevices.push(portDevice)
+            allDevices.push(portDevice);
           }
         }
-        devices = allDevices
+        devices = allDevices;
       }
-      // Si toujours peu d'appareils, essayer un scan ARP
       if (devices.length <= 1) {
-        this.logger.log(`[SCAN] Peu d'appareils trouvés, tentative de scan ARP...`)
-        const arpDevices = await this.executeArpScan(network)
-        this.logger.log(`[SCAN] Appareils trouvés après scan ARP: ${arpDevices.length}`)
-        const allDevices = [...devices]
+        this.logger.log(`[SCAN] Peu d'appareils trouvés, tentative de scan ARP...`);
+        const arpDevices = await this.executeArpScan(network);
+        this.logger.log(`[SCAN] Appareils trouvés après scan ARP: ${arpDevices.length}`);
+        const allDevices = [...devices];
         for (const arpDevice of arpDevices) {
           if (!allDevices.find(d => d.ipAddress === arpDevice.ipAddress)) {
-            allDevices.push(arpDevice)
+            allDevices.push(arpDevice);
           }
         }
-        devices = allDevices
+        devices = allDevices;
       }
-      this.logger.log(`[SCAN] Total appareils trouvés: ${devices.length}`)
-      return devices
+      this.logger.log(`[SCAN] Total appareils trouvés: ${devices.length}`);
+      return devices;
     } catch (error) {
-      this.logger.error(`[SCAN] Erreur scan nmap: ${error.message}`)
-      return []
+      this.logger.error(`[SCAN] Erreur scan nmap: ${error.message}`);
+      return [];
     }
   }
 
-  private async executePortScan(network: string, deepMode = false): Promise<Device[]> {
+  private async executePortScan(network: string, deepMode = false, customPorts?: string | number[]): Promise<Device[]> {
     try {
-      this.logger.log(`[SCAN] Démarrage scan de ports du réseau: ${network}`)
-      const isWindows = os.platform() === "win32"
-      const mode = deepMode ? 'complet' : 'rapide'
-      const { hostTimeout, maxRetries, timing } = NETWORK_TIMEOUTS.nmap[mode]
-      const nmapCommand = isWindows
-        ? `nmap -sS -p 21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T${timing} --max-retries ${maxRetries} --host-timeout ${hostTimeout}ms ${network}`
-        : `nmap -sS -p 21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T${timing} --max-retries ${maxRetries} --host-timeout ${hostTimeout}ms ${network}`
-      this.logger.log(`[SCAN] Commande scan de ports: ${nmapCommand}`)
-      const { stdout, stderr } = await execAsync(nmapCommand)
+      this.logger.log(`[SCAN] Démarrage scan de ports du réseau: ${network}`);
+      const isWindows = os.platform() === "win32";
+      const mode = deepMode ? 'complet' : 'rapide';
+      const { hostTimeout, maxRetries, timing } = NETWORK_TIMEOUTS.nmap[mode];
+      const ports = this.getOptimizedPorts(deepMode, customPorts);
+      const nmapCommand = `nmap -sS -p ${ports} -T5 --min-parallelism 100 --max-parallelism 256 --max-retries 1 --host-timeout 500ms ${network}`;
+      this.logger.log(`[SCAN] Commande scan de ports: ${nmapCommand}`);
+      const { stdout, stderr } = await execAsync(nmapCommand);
       if (stderr) {
-        this.logger.warn(`[SCAN] Stderr scan de ports: ${stderr}`)
+        this.logger.warn(`[SCAN] Stderr scan de ports: ${stderr}`);
       }
-      const devices = this.parseNmapPortScanOutput(stdout)
-      this.logger.log(`[SCAN] Appareils trouvés par scan de ports: ${devices.length}`)
-      return devices
+      const devices = this.parseNmapPortScanOutput(stdout);
+      this.logger.log(`[SCAN] Appareils trouvés par scan de ports: ${devices.length}`);
+      return devices;
     } catch (error) {
-      this.logger.error(`[SCAN] Erreur scan de ports: ${error.message}`)
-      return []
+      this.logger.error(`[SCAN] Erreur scan de ports: ${error.message}`);
+      return [];
     }
   }
 
@@ -463,35 +469,30 @@ export class NmapAgentService {
   /**
    * Récupère les ports ouverts pour une IP donnée
    */
-  private async getOpenPorts(ipAddress: string, deepMode = false): Promise<number[]> {
+  private async getOpenPorts(ipAddress: string, deepMode = false, customPorts?: string | number[]): Promise<number[]> {
     try {
-      const isWindows = os.platform() === "win32"
-      const mode = deepMode ? 'complet' : 'rapide'
-      const { hostTimeout, maxRetries, timing } = NETWORK_TIMEOUTS.nmap[mode]
-      const nmapCommand = isWindows
-        ? `nmap -sS -p 21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T${timing} --max-retries ${maxRetries} --host-timeout ${hostTimeout}ms ${ipAddress}`
-        : `nmap -sS -p 21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080 -T${timing} --max-retries ${maxRetries} --host-timeout ${hostTimeout}ms ${ipAddress}`
-      const { stdout } = await execAsync(nmapCommand)
-      
-      // Parser les ports ouverts depuis la sortie nmap
-      const openPorts: number[] = []
-      const lines = stdout.split('\n')
-      
+      const isWindows = os.platform() === "win32";
+      const mode = deepMode ? 'complet' : 'rapide';
+      const { hostTimeout, maxRetries, timing } = NETWORK_TIMEOUTS.nmap[mode];
+      const ports = this.getOptimizedPorts(deepMode, customPorts);
+      const nmapCommand = `nmap -sS -p ${ports} -T5 --min-parallelism 100 --max-parallelism 256 --max-retries 1 --host-timeout 500ms ${ipAddress}`;
+      const { stdout } = await execAsync(nmapCommand);
+      const openPorts: number[] = [];
+      const lines = stdout.split('\n');
       for (const line of lines) {
-        const portMatch = line.match(/(\d+)\/(tcp|udp)\s+(open|filtered)/)
+        const portMatch = line.match(/(\d+)\/(tcp|udp)\s+(open|filtered)/);
         if (portMatch) {
-          const port = parseInt(portMatch[1])
-          const status = portMatch[3]
+          const port = parseInt(portMatch[1]);
+          const status = portMatch[3];
           if (status === 'open') {
-            openPorts.push(port)
+            openPorts.push(port);
           }
         }
       }
-      
-      return openPorts
+      return openPorts;
     } catch (error) {
-      this.logger.debug(`[PORTS] Erreur scan ports ${ipAddress}: ${error.message}`)
-      return []
+      this.logger.debug(`[PORTS] Erreur scan ports ${ipAddress}: ${error.message}`);
+      return [];
     }
   }
 

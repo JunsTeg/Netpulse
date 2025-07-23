@@ -473,40 +473,45 @@ export class RouterQueryService {
     return "127.0.0.1"
   }
 
-  private async getOSFromSNMP(ip: string): Promise<string> {
+  private getOptimizedPorts(deepMode: boolean, customPorts?: number[]): number[] {
+    const fastPorts = [22, 80, 443, 445, 3389, 515, 9100, 161, 8080];
+    const fullPorts = [21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 993, 995, 1723, 3306, 3389, 5900, 8080, 515, 9100, 161];
+    if (customPorts && Array.isArray(customPorts)) return customPorts;
+    return deepMode ? fullPorts : fastPorts;
+  }
+
+  private async getOSFromSNMP(ip: string, deepMode = false, customPorts?: number[]): Promise<string> {
     try {
-      const ports = [22, 23, 80, 135, 139, 443, 445, 515, 548, 631, 9100, 3389, 554, 8080, 8888, 1900]
-      const openPorts: number[] = []
-      const banners: Record<number, string> = {}
-      const timeout = 1000
-      for (const port of ports) {
-        await new Promise<void>(resolve => {
-          const socket = new net.Socket()
-          let banner = ''
-          let isOpen = false
-          socket.setTimeout(timeout)
-          socket.connect(port, ip, () => {
-            isOpen = true
-          })
-          socket.on('data', (data: Buffer) => {
-            banner += data.toString('utf8')
-            socket.destroy()
-          })
-          socket.on('timeout', () => {
-            socket.destroy()
-          })
-          socket.on('error', () => {
-            socket.destroy()
-          })
-          socket.on('close', () => {
-            if (isOpen) {
-              openPorts.push(port)
-              if (banner) banners[port] = banner.slice(0, 100)
-            }
-            resolve()
-          })
-        })
-      }
+      const ports = this.getOptimizedPorts(deepMode, customPorts);
+      const openPorts: number[] = [];
+      const banners: Record<number, string> = {};
+      const timeout = 300;
+      await Promise.all(ports.map(port => new Promise<void>(resolve => {
+        const socket = new net.Socket();
+        let banner = '';
+        let isOpen = false;
+        socket.setTimeout(timeout);
+        socket.connect(port, ip, () => {
+          isOpen = true;
+        });
+        socket.on('data', (data: Buffer) => {
+          banner += data.toString('utf8');
+          socket.destroy();
+        });
+        socket.on('timeout', () => {
+          socket.destroy();
+        });
+        socket.on('error', () => {
+          socket.destroy();
+        });
+        socket.on('close', () => {
+          if (isOpen) {
+            openPorts.push(port);
+            if (banner) banners[port] = banner.slice(0, 100);
+          }
+          resolve();
+        });
+      })));
       let ttl = 0
       try {
         const { stdout } = await execAsync(`ping -n 1 -w 1000 ${ip}`)

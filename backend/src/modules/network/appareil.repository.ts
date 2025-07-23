@@ -57,16 +57,23 @@ export class AppareilRepository {
           }
           return a || b
         }
+        const mergedStats = bestValue(
+          typeof existing[0].stats === 'string' ? JSON.parse(existing[0].stats) : existing[0].stats,
+          typeof device.stats === 'string' ? JSON.parse(device.stats) : device.stats
+        )
         const merged = {
           hostname: bestValue(existing[0].hostname, device.hostname),
           macAddress: bestValue(existing[0].macAddress, device.macAddress),
           os: bestValue(existing[0].os, device.os),
           deviceType: bestValue(existing[0].deviceType, device.deviceType),
-          stats: JSON.stringify(bestValue(
-            typeof existing[0].stats === 'string' ? JSON.parse(existing[0].stats) : existing[0].stats,
-            typeof device.stats === 'string' ? JSON.parse(device.stats) : device.stats
-          )),
+          stats: JSON.stringify(mergedStats),
           lastSeen: device.lastSeen || existing[0].lastSeen,
+          // Champs SQL synchronisés
+          cpuUsage: mergedStats.cpu ?? null,
+          memoryUsage: mergedStats.memory ?? null,
+          bandwidthDownload: mergedStats.bandwidth?.download ?? null,
+          bandwidthUpload: mergedStats.bandwidth?.upload ?? null,
+          status: mergedStats.status ?? null,
         }
         await sequelize.query(
           `UPDATE appareils SET
@@ -76,6 +83,11 @@ export class AppareilRepository {
             deviceType = :deviceType,
             stats = :stats,
             lastSeen = :lastSeen,
+            cpuUsage = :cpuUsage,
+            memoryUsage = :memoryUsage,
+            bandwidthDownload = :bandwidthDownload,
+            bandwidthUpload = :bandwidthUpload,
+            status = :status,
             isActive = TRUE
           WHERE id = :id`,
           {
@@ -89,11 +101,19 @@ export class AppareilRepository {
         this.logger.debug(`[UPSERT] Appareil mis à jour (fusion avancée): ${device.ipAddress} / ${device.macAddress}`)
       } else {
         id = device.id || uuidv4()
+        // Champs SQL synchronisés
+        const cpuUsage = device.stats?.cpu ?? null
+        const memoryUsage = device.stats?.memory ?? null
+        const bandwidthDownload = device.stats?.bandwidth?.download ?? null
+        const bandwidthUpload = device.stats?.bandwidth?.upload ?? null
+        const status = device.stats?.status ?? null
         await sequelize.query(
           `INSERT INTO appareils (
-            id, hostname, ipAddress, macAddress, os, deviceType, stats, lastSeen, firstDiscovered, isActive
+            id, hostname, ipAddress, macAddress, os, deviceType, stats, lastSeen, firstDiscovered, isActive,
+            cpuUsage, memoryUsage, bandwidthDownload, bandwidthUpload, status
           ) VALUES (
-            :id, :hostname, :ipAddress, :macAddress, :os, :deviceType, :stats, :lastSeen, :firstDiscovered, TRUE
+            :id, :hostname, :ipAddress, :macAddress, :os, :deviceType, :stats, :lastSeen, :firstDiscovered, TRUE,
+            :cpuUsage, :memoryUsage, :bandwidthDownload, :bandwidthUpload, :status
           )`,
           {
             replacements: {
@@ -106,6 +126,11 @@ export class AppareilRepository {
               stats: JSON.stringify(device.stats),
               lastSeen: device.lastSeen,
               firstDiscovered: device.firstDiscovered || new Date(),
+              cpuUsage,
+              memoryUsage,
+              bandwidthDownload,
+              bandwidthUpload,
+              status,
             },
             type: QueryTypes.INSERT,
           }
@@ -175,6 +200,10 @@ export class AppareilRepository {
    * Upsert (insert ou update) en batch pour plusieurs appareils
    */
   async upsertMany(devices: Device[], batchSize = 200): Promise<string[]> {
+    // --- PATCH: Générer un id pour chaque device si absent ---
+    for (const device of devices) {
+      if (!device.id) device.id = uuidv4()
+    }
     const insertedIds: string[] = []
     if (!Array.isArray(devices) || devices.length === 0) return insertedIds
     try {
@@ -187,7 +216,13 @@ export class AppareilRepository {
           if (!device.stats || typeof device.stats !== 'object') {
             device.stats = { cpu: 0, memory: 0, uptime: "0", status: DeviceStatus.INACTIVE, services: [] }
           }
-          return `('${device.id || uuidv4()}',
+          // Synchronisation des champs SQL
+          const cpuUsage = device.stats?.cpu ?? null
+          const memoryUsage = device.stats?.memory ?? null
+          const bandwidthDownload = device.stats?.bandwidth?.download ?? null
+          const bandwidthUpload = device.stats?.bandwidth?.upload ?? null
+          const status = device.stats?.status ?? null
+          return `('${device.id}',
             ${sequelize.escape(device.hostname)},
             ${sequelize.escape(device.ipAddress)},
             ${sequelize.escape(device.macAddress)},
@@ -196,11 +231,17 @@ export class AppareilRepository {
             ${sequelize.escape(JSON.stringify(device.stats))},
             ${sequelize.escape(device.lastSeen)},
             ${sequelize.escape(device.firstDiscovered || new Date())},
-            TRUE)`
+            TRUE,
+            ${cpuUsage !== null ? sequelize.escape(cpuUsage) : 'NULL'},
+            ${memoryUsage !== null ? sequelize.escape(memoryUsage) : 'NULL'},
+            ${bandwidthDownload !== null ? sequelize.escape(bandwidthDownload) : 'NULL'},
+            ${bandwidthUpload !== null ? sequelize.escape(bandwidthUpload) : 'NULL'},
+            ${status !== null ? sequelize.escape(status) : 'NULL'})`
         }).join(',\n')
         // Construction de la requête
         const sql = `INSERT INTO appareils
-          (id, hostname, ipAddress, macAddress, os, deviceType, stats, lastSeen, firstDiscovered, isActive)
+          (id, hostname, ipAddress, macAddress, os, deviceType, stats, lastSeen, firstDiscovered, isActive,
+           cpuUsage, memoryUsage, bandwidthDownload, bandwidthUpload, status)
           VALUES ${values}
           ON DUPLICATE KEY UPDATE
             hostname = VALUES(hostname),
@@ -209,9 +250,22 @@ export class AppareilRepository {
             deviceType = VALUES(deviceType),
             stats = VALUES(stats),
             lastSeen = VALUES(lastSeen),
-            isActive = TRUE`;
+            isActive = TRUE,
+            cpuUsage = VALUES(cpuUsage),
+            memoryUsage = VALUES(memoryUsage),
+            bandwidthDownload = VALUES(bandwidthDownload),
+            bandwidthUpload = VALUES(bandwidthUpload),
+            status = VALUES(status)`;
         await sequelize.query(sql, { type: QueryTypes.INSERT })
-        insertedIds.push(...batch.map(d => d.id))
+        // --- PATCH: Après insertion, récupérer les ids réels depuis la base ---
+        const batchIds = await Promise.all(batch.map(async d => {
+          const rows = await sequelize.query<{id: string}>(
+            `SELECT id FROM appareils WHERE ipAddress = :ip AND hostname = :hostname LIMIT 1`,
+            { replacements: { ip: d.ipAddress, hostname: d.hostname }, type: QueryTypes.SELECT }
+          )
+          return rows[0]?.id || d.id
+        }))
+        insertedIds.push(...batchIds)
         this.logger.log(`[BATCH UPSERT] ${batch.length} appareils insérés/mis à jour.`)
       }
       return insertedIds

@@ -54,6 +54,8 @@ export interface NmapScanConfig {
   serviceDetection?: boolean
   timing?: number
   sudo?: boolean
+  deepMode?: boolean
+  customPorts?: string | number[]
 }
 
 export interface NmapScanResult {

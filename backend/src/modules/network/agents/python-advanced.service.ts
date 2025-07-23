@@ -16,6 +16,7 @@ interface PythonScanConfig {
   timeout?: number
   enableNmap?: boolean
   enableScapy?: boolean
+  deepScan?: boolean; // Added deepScan option
 }
 
 interface PythonDevice {
@@ -142,7 +143,17 @@ export class PythonAdvancedService {
     }
   }
 
+  private getOptimizedPorts(deepMode: boolean, customPorts?: number[]): number[] {
+    const fastPorts = [22, 80, 443, 445, 3389, 515, 9100, 161, 8080];
+    const fullPorts = [21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 993, 995, 1723, 3306, 3389, 5900, 8080, 515, 9100, 161];
+    if (customPorts && Array.isArray(customPorts)) return customPorts;
+    return deepMode ? fullPorts : fastPorts;
+  }
+
   private async createPythonScript(config: PythonScanConfig): Promise<string> {
+    const ports = this.getOptimizedPorts(!!config.deepScan, config.ports);
+    const threads = config.threads || 200;
+    const timeout = config.timeout || 0.3;
     const script = `#!/usr/bin/env python3
 """
 Scanner réseau Python ultra-avancé pour Windows
@@ -193,7 +204,7 @@ class NetworkDevice:
             self.last_seen = datetime.now().isoformat()
 
 class UltimatePythonScanner:
-    def __init__(self, network_range="${config.networkRange}", threads=${config.threads || 50}, timeout=${config.timeout || 1}):
+    def __init__(self, network_range="${config.networkRange}", threads=${threads}, timeout=${timeout}):
         self.network_range = network_range
         self.threads = threads
         self.timeout = timeout
@@ -201,7 +212,7 @@ class UltimatePythonScanner:
         self.lock = threading.Lock()
         
         # Configuration des ports
-        self.ports = [${(config.ports || [22, 23, 53, 80, 135, 139, 443, 445, 993, 995, 1723, 3389, 5900, 8080]).join(",")}]
+        self.ports = [${ports.join(",")}]
         
         # Base de données des vendors MAC
         self.mac_vendors = {

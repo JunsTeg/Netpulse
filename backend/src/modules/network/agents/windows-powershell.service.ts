@@ -128,15 +128,24 @@ export class WindowsPowerShellService {
     }
   }
 
+  private getOptimizedPorts(deepMode: boolean, customPorts?: number[]): number[] {
+    const fastPorts = [22, 80, 443, 445, 3389, 515, 9100, 161, 8080];
+    const fullPorts = [21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 993, 995, 1723, 3306, 3389, 5900, 8080, 515, 9100, 161];
+    if (customPorts && Array.isArray(customPorts)) return customPorts;
+    return deepMode ? fullPorts : fastPorts;
+  }
+
   private async createPowerShellScript(config: PowerShellScanConfig): Promise<string> {
+    const ports = this.getOptimizedPorts(!!config.deepScan, config.ports);
+    const threads = config.threads || 200;
     const script = `
 # Scanner Réseau Ultra-Puissant PowerShell
 param(
     [string]$NetworkRange = "${config.networkRange}",
-    [int[]]$Ports = @(${(config.ports || [22, 23, 53, 80, 135, 139, 443, 445, 993, 995, 1723, 3389, 5900, 8080]).join(",")}),
+    [int[]]$Ports = @(${ports.join(",")}),
     [bool]$DeepScan = $${config.deepScan || false},
     [bool]$Stealth = $${config.stealth || false},
-    [int]$Threads = ${config.threads || 20}
+    [int]$Threads = ${threads}
 )
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -225,12 +234,10 @@ function Test-AdvancedPing {
 # Scan de port avancé
 function Test-PortAdvanced {
     param([string]$IP, [int]$Port)
-    
     try {
         $tcpClient = New-Object System.Net.Sockets.TcpClient
         $connect = $tcpClient.BeginConnect($IP, $Port, $null, $null)
-        $wait = $connect.AsyncWaitHandle.WaitOne(1000, $false)
-        
+        $wait = $connect.AsyncWaitHandle.WaitOne(300, $false)  # Timeout réduit à 300ms
         if ($wait) {
             try {
                 $tcpClient.EndConnect($connect)

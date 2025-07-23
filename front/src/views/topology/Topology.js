@@ -230,13 +230,16 @@ const Topology = () => {
               memoryUsage: node.stats?.memoryUsage || 0
             },
             lastSeen: node.lastSeen || null,
-            firstDiscovered: node.firstDiscovered || null
+            firstDiscovered: node.firstDiscovered || null,
+            isCentral: node.isCentral || false,
+            isVirtual: node.isVirtual || false,
           })),
           links: links.map(link => ({
             source: link.source,
             target: link.target,
             type: link.type || 'LAN',
-            bandwidth: link.bandwidth || link.metrics?.bandwidth || '1Gbps'
+            bandwidth: link.bandwidth || link.metrics?.bandwidth || '1Gbps',
+            isVirtual: link.isVirtual || false,
           })),
           stats
         }
@@ -247,7 +250,7 @@ const Topology = () => {
       } else {
         console.warn('[TOPOLOGY] Format de réponse inattendu:', response.data)
         // Essayer de générer une topologie à partir des appareils
-        await generateTopologyFromDevices()
+        // await generateTopologyFromDevices() // Supprimé
       }
     } catch (err) {
       console.error('[TOPOLOGY] Erreur lors du chargement:', err)
@@ -268,35 +271,35 @@ const Topology = () => {
         console.log('[TOPOLOGY] Aucune topologie trouvée, génération automatique...')
         
         // Vérifier d'abord si des appareils existent
-        const devicesExist = await checkDevicesExist()
+        // const devicesExist = await checkDevicesExist() // Supprimé
         
-        if (devicesExist) {
-          console.log('[TOPOLOGY] Des appareils existent, génération rapide...')
-          // Essayer de générer une topologie à partir des appareils existants
-          try {
-            await generateTopologyFromDevices()
-          } catch (fallbackError) {
-            console.error('[TOPOLOGY] Échec de la génération à partir des appareils:', fallbackError)
+        // if (devicesExist) {
+        //   console.log('[TOPOLOGY] Des appareils existent, génération rapide...')
+        //   // Essayer de générer une topologie à partir des appareils existants
+        //   try {
+        //     await generateTopologyFromDevices()
+        //   } catch (fallbackError) {
+        //     console.error('[TOPOLOGY] Échec de la génération à partir des appareils:', fallbackError)
             
             // Si même ça échoue, lancer un scan complet
             console.log('[TOPOLOGY] Lancement d\'un scan complet...')
             await launchComprehensiveScan()
-          }
-        } else {
-          console.log('[TOPOLOGY] Aucun appareil trouvé, lancement d\'un scan complet...')
+        //   }
+        // } else {
+        //   console.log('[TOPOLOGY] Aucun appareil trouvé, lancement d\'un scan complet...')
           // Si aucun appareil, lancer un scan complet
-          await launchComprehensiveScan()
-        }
+          // await launchComprehensiveScan() // Supprimé
+        // }
       } else {
         // Autre type d'erreur
         setError('Erreur lors du chargement de la topologie: ' + (err.response?.data?.message || err.message))
         
         // En cas d'erreur, essayer quand même de générer une topologie basique
-        try {
-          await generateTopologyFromDevices()
-        } catch (fallbackError) {
-          console.error('[TOPOLOGY] Impossible de générer une topologie de secours:', fallbackError)
-        }
+        // try {
+        //   await generateTopologyFromDevices() // Supprimé
+        // } catch (fallbackError) {
+        //   console.error('[TOPOLOGY] Impossible de générer une topologie de secours:', fallbackError)
+        // }
       }
     } finally {
       setLoading(false)
@@ -304,15 +307,15 @@ const Topology = () => {
   }
 
   // Fonction pour vérifier rapidement si des appareils existent
-  const checkDevicesExist = async () => {
-    try {
-      const response = await axios.get('/api/network/devices')
-      return response.data && response.data.success && response.data.data && response.data.data.length > 0
-    } catch (err) {
-      console.error('[TOPOLOGY] Erreur lors de la vérification des appareils:', err)
-      return false
-    }
-  }
+  // const checkDevicesExist = async () => { // Supprimé
+  //   try {
+  //     const response = await axios.get('/api/network/devices')
+  //     return response.data && response.data.success && response.data.data && response.data.data.length > 0
+  //   } catch (err) {
+  //     console.error('[TOPOLOGY] Erreur lors de la vérification des appareils:', err)
+  //     return false
+  //   }
+  // }
 
   // Fonction pour lancer un scan complet et générer la topologie
   const launchComprehensiveScan = async () => {
@@ -321,16 +324,16 @@ const Topology = () => {
       setError('Génération de la topologie en cours... (cela peut prendre quelques minutes)')
       
       // Vérifier d'abord si des appareils existent déjà
-      const devicesExist = await checkDevicesExist()
+      // const devicesExist = await checkDevicesExist() // Supprimé
       
-      if (devicesExist) {
-        console.log('[TOPOLOGY] Des appareils existent déjà, génération rapide...')
-        setError('Appareils détectés, génération de la topologie...')
+      // if (devicesExist) {
+      //   console.log('[TOPOLOGY] Des appareils existent déjà, génération rapide...')
+      //   setError('Appareils détectés, génération de la topologie...')
         
         // Si des appareils existent, générer directement une topologie
-        await generateTopologyFromDevices()
-        return
-      }
+        // await generateTopologyFromDevices() // Supprimé
+        // return
+      // }
       
       // Lancer un scan complet avec un timeout plus long
       const scanResponse = await axios.get('/api/network/comprehensive-scan', {
@@ -363,135 +366,135 @@ const Topology = () => {
       }
       
       // Fallback : générer une topologie à partir des appareils
-      try {
-        await generateTopologyFromDevices()
-      } catch (fallbackError) {
-        console.error('[TOPOLOGY] Échec du fallback:', fallbackError)
-        setError('Impossible de générer une topologie. Vérifiez votre connexion réseau.')
-      }
+      // try {
+      //   await generateTopologyFromDevices() // Supprimé
+      // } catch (fallbackError) {
+      //   console.error('[TOPOLOGY] Échec du fallback:', fallbackError)
+      //   setError('Impossible de générer une topologie. Vérifiez votre connexion réseau.')
+      // }
     }
   }
 
   // Fonction pour générer une topologie à partir des appareils
-  const generateTopologyFromDevices = async () => {
-    try {
-      console.log('[TOPOLOGY] Génération d\'une topologie à partir des appareils...')
+  // const generateTopologyFromDevices = async () => { // Supprimé
+  //   try {
+  //     console.log('[TOPOLOGY] Génération d\'une topologie à partir des appareils...')
       
       // Récupérer les appareils
-      const devicesResponse = await axios.get('/api/network/devices')
+      // const devicesResponse = await axios.get('/api/network/devices')
       
-      if (devicesResponse.data && devicesResponse.data.success && devicesResponse.data.data) {
-        const devices = devicesResponse.data.data
+      // if (devicesResponse.data && devicesResponse.data.success && devicesResponse.data.data) {
+      //   const devices = devicesResponse.data.data
         
-        if (devices.length === 0) {
-          console.log('[TOPOLOGY] Aucun appareil trouvé, lancement d\'un scan...')
-          // Si aucun appareil, lancer un scan rapide
-          await launchComprehensiveScan()
-          return
-        }
+      //   if (devices.length === 0) {
+      //     console.log('[TOPOLOGY] Aucun appareil trouvé, lancement d\'un scan...')
+      //     // Si aucun appareil, lancer un scan rapide
+      //     await launchComprehensiveScan()
+      //     return
+      //   }
         
-        console.log(`[TOPOLOGY] ${devices.length} appareils trouvés, génération de la topologie...`)
+      //   console.log(`[TOPOLOGY] ${devices.length} appareils trouvés, génération de la topologie...`)
         
-        // Créer des nœuds à partir des appareils
-        const nodes = devices.map(device => ({
-          id: device.id,
-          hostname: device.hostname || 'Non disponible',
-          ipAddress: device.ipAddress || 'Non disponible',
-          macAddress: device.macAddress || 'Non disponible',
-          os: device.os || 'Non disponible',
-          deviceType: (device.deviceType || 'other').toLowerCase(),
-          stats: {
-            status: device.stats?.status || 'inactive',
-            vlan: device.stats?.vlan || 'N/A',
-            bandwidth: device.stats?.bandwidth || 0,
-            cpuUsage: device.stats?.cpuUsage || 0,
-            memoryUsage: device.stats?.memoryUsage || 0
-          },
-          lastSeen: device.lastSeen || null,
-          firstDiscovered: device.firstDiscovered || null
-        }))
+      //   // Créer des nœuds à partir des appareils
+      //   const nodes = devices.map(device => ({
+      //     id: device.id,
+      //     hostname: device.hostname || 'Non disponible',
+      //     ipAddress: device.ipAddress || 'Non disponible',
+      //     macAddress: device.macAddress || 'Non disponible',
+      //     os: device.os || 'Non disponible',
+      //     deviceType: (device.deviceType || 'other').toLowerCase(),
+      //     stats: {
+      //       status: device.stats?.status || 'inactive',
+      //       vlan: device.stats?.vlan || 'N/A',
+      //       bandwidth: device.stats?.bandwidth || 0,
+      //       cpuUsage: device.stats?.cpuUsage || 0,
+      //       memoryUsage: device.stats?.memoryUsage || 0
+      //     },
+      //     lastSeen: device.lastSeen || null,
+      //     firstDiscovered: device.firstDiscovered || null
+      //   }))
         
-        // Créer des liens simples entre appareils (simulation)
-        const links = []
-        const networkDevices = nodes.filter(node => 
-          ['router', 'switch', 'ap'].includes(node.deviceType)
-        )
+      //   // Créer des liens simples entre appareils (simulation)
+      //   const links = []
+      //   const networkDevices = nodes.filter(node => 
+      //     ['router', 'switch', 'ap'].includes(node.deviceType)
+      //   )
         
-        // Connecter les équipements réseau entre eux
-        for (let i = 0; i < networkDevices.length; i++) {
-          for (let j = i + 1; j < networkDevices.length; j++) {
-            links.push({
-              source: networkDevices[i].id,
-              target: networkDevices[j].id,
-              type: 'LAN',
-              bandwidth: '1Gbps'
-            })
-          }
-        }
+      //   // Connecter les équipements réseau entre eux
+      //   for (let i = 0; i < networkDevices.length; i++) {
+      //     for (let j = i + 1; j < networkDevices.length; j++) {
+      //       links.push({
+      //         source: networkDevices[i].id,
+      //         target: networkDevices[j].id,
+      //         type: 'LAN',
+      //         bandwidth: '1Gbps'
+      //       })
+      //     }
+      //   }
         
-        // Connecter les appareils finaux aux équipements réseau les plus proches
-        const endDevices = nodes.filter(node => 
-          !['router', 'switch', 'ap'].includes(node.deviceType)
-        )
+      //   // Connecter les appareils finaux aux équipements réseau les plus proches
+      //   const endDevices = nodes.filter(node => 
+      //     !['router', 'switch', 'ap'].includes(node.deviceType)
+      //   )
         
-        endDevices.forEach(device => {
-          if (networkDevices.length > 0) {
-            // Connecter au premier équipement réseau disponible
-            links.push({
-              source: device.id,
-              target: networkDevices[0].id,
-              type: 'LAN',
-              bandwidth: '100Mbps'
-            })
-          } else if (endDevices.length > 1) {
-            // Si pas d'équipement réseau, connecter aux autres appareils
-            const otherDevices = endDevices.filter(d => d.id !== device.id)
-            if (otherDevices.length > 0) {
-              links.push({
-                source: device.id,
-                target: otherDevices[0].id,
-                type: 'LAN',
-                bandwidth: '100Mbps'
-              })
-            }
-          }
-        })
+      //   endDevices.forEach(device => {
+      //     if (networkDevices.length > 0) {
+      //       // Connecter au premier équipement réseau disponible
+      //       links.push({
+      //         source: device.id,
+      //         target: networkDevices[0].id,
+      //         type: 'LAN',
+      //         bandwidth: '100Mbps'
+      //       })
+      //     } else if (endDevices.length > 1) {
+      //       // Si pas d'équipement réseau, connecter aux autres appareils
+      //       const otherDevices = endDevices.filter(d => d.id !== device.id)
+      //       if (otherDevices.length > 0) {
+      //         links.push({
+      //           source: device.id,
+      //           target: otherDevices[0].id,
+      //           type: 'LAN',
+      //           bandwidth: '100Mbps'
+      //         })
+      //       }
+      //     }
+      //   })
         
-        const transformedData = {
-          nodes,
-          links,
-          stats: {
-            totalDevices: nodes.length,
-            activeDevices: nodes.filter(n => n.stats.status === 'active').length,
-            averageLatency: 0,
-            averagePacketLoss: 0,
-            totalBandwidth: { download: 0, upload: 0 }
-          }
-        }
+      //   const transformedData = {
+      //     nodes,
+      //     links,
+      //     stats: {
+      //       totalDevices: nodes.length,
+      //       activeDevices: nodes.filter(n => n.stats.status === 'active').length,
+      //       averageLatency: 0,
+      //       averagePacketLoss: 0,
+      //       totalBandwidth: { download: 0, upload: 0 }
+      //     }
+      //   }
         
-        setNetworkData(transformedData)
-        filterNetworkData(selectedView)
-        console.log('[TOPOLOGY] Topologie générée à partir des appareils avec succès')
+      //   setNetworkData(transformedData)
+      //   filterNetworkData(selectedView)
+      //   console.log('[TOPOLOGY] Topologie générée à partir des appareils avec succès')
         
         // Afficher un message informatif
-        setError(null)
-        console.log(`[TOPOLOGY] Topologie générée : ${nodes.length} appareils, ${links.length} connexions`)
-      } else {
-        console.warn('[TOPOLOGY] Format de réponse inattendu pour les appareils:', devicesResponse.data)
-        throw new Error('Impossible de récupérer les appareils. Vérifiez votre connexion.')
-      }
-    } catch (err) {
-      console.error('[TOPOLOGY] Erreur lors de la génération de la topologie:', err)
+      //   setError(null)
+      //   console.log(`[TOPOLOGY] Topologie générée : ${nodes.length} appareils, ${links.length} connexions`)
+      // } else {
+      //   console.warn('[TOPOLOGY] Format de réponse inattendu pour les appareils:', devicesResponse.data)
+      //   throw new Error('Impossible de récupérer les appareils. Vérifiez votre connexion.')
+      // }
+    // } catch (err) {
+    //   console.error('[TOPOLOGY] Erreur lors de la génération de la topologie:', err)
       
       // Si on ne peut pas récupérer les appareils, c'est probablement un problème de connexion
-      if (err.response?.status === 401) {
-        authService.logout()
-        window.location.href = '/login'
-        return
-      }
+      // if (err.response?.status === 401) {
+      //   authService.logout()
+      //   window.location.href = '/login'
+      //   return
+      // }
       
-      throw new Error('Erreur lors de la génération de la topologie: ' + (err.response?.data?.message || err.message))
-    }
+      // throw new Error('Erreur lors de la génération de la topologie: ' + (err.response?.data?.message || err.message))
+    // }
   }
 
   // Initialisation de l'authentification et chargement de la topologie
@@ -1004,6 +1007,20 @@ const Topology = () => {
       }
     } catch (err) {
       setError('Erreur lors de la régénération : ' + (err.response?.data?.message || err.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 5. Adapter launchComprehensiveScan pour appeler l'API backend puis recharger la topologie
+  const launchComprehensiveScan = async () => {
+    setLoading(true);
+    setError('Scan complet en cours... (cela peut prendre quelques minutes)');
+    try {
+      await axios.get('/api/network/comprehensive-scan', { timeout: 300000 });
+      await fetchTopology();
+    } catch (err) {
+      setError('Erreur lors du scan complet : ' + (err.response?.data?.message || err.message));
     } finally {
       setLoading(false);
     }
@@ -1622,7 +1639,7 @@ const Topology = () => {
         </CCardBody>
       </CCard>
     </>
-  )
+  );
 }
 
-export default Topology
+export default Topology;
