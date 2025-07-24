@@ -10,6 +10,7 @@ import type { NetworkTopologyData } from "./network.types"
 import { exec } from "child_process"
 import { promisify } from "util"
 import pLimit from 'p-limit';
+import { ExecutionManagerService } from '../../execution-manager/execution-manager.service';
 
 const execAsync = promisify(exec)
 
@@ -68,12 +69,12 @@ export class EnhancedNetworkService extends NetworkService {
   constructor(
     private readonly windowsPowerShell: WindowsPowerShellService,
     private readonly pythonAdvanced: PythonAdvancedService,
-    // Injection des services parents
     nmapAgent: NmapAgentService,
     tracerouteAgent: TracerouteAgentService,
     netstatAgent: NetstatAgentService,
+    executionManager: ExecutionManagerService,
   ) {
-    super(nmapAgent, tracerouteAgent, netstatAgent)
+    super(nmapAgent, tracerouteAgent, netstatAgent, executionManager)
   }
 
   async executeEnhancedScan(config: EnhancedScanConfig, userId?: string): Promise<EnhancedScanResult> {

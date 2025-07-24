@@ -19,12 +19,14 @@ import { OuiService } from "./services/oui.service"
 import { DeviceTypeService } from "./services/device-type.service"
 import { TopologyModule } from '../topology/topology.module';
 import { TopologyService } from '../topology/topology.service';
+import { ExecutionManagerModule } from '../../execution-manager/execution-manager.module';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
     AuthModule,
     forwardRef(() => TopologyModule),
+    ExecutionManagerModule,
   ],
   controllers: [NetworkController],
   providers: [

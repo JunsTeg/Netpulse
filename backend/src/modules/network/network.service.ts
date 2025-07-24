@@ -1,10 +1,12 @@
-import { Injectable, Logger } from "@nestjs/common"
+import { Injectable, Logger, Inject } from "@nestjs/common"
 import { NmapAgentService } from "./agents/nmap.service"
 import { TracerouteAgentService } from "./agents/traceroute.service"
 import { NetstatAgentService } from "./agents/netstat.service"
 import type { Device, NmapScanConfig, NmapScanResult } from "./device.model"
 import type { NetworkTopologyData } from "./network.types"
 import pLimit from 'p-limit';
+import { ExecutionManagerService } from '../../execution-manager/execution-manager.service';
+import { ScanTask } from '../../execution-manager/tasks/scan.task';
 
 @Injectable()
 export class NetworkService {
@@ -14,6 +16,8 @@ export class NetworkService {
     private readonly nmapAgent: NmapAgentService,
     private readonly tracerouteAgent: TracerouteAgentService,
     private readonly netstatAgent: NetstatAgentService,
+    @Inject(ExecutionManagerService)
+    private readonly executionManager: ExecutionManagerService,
   ) {}
 
   async scanNetwork(target: string, userId?: string): Promise<NmapScanResult> {
@@ -36,6 +40,15 @@ export class NetworkService {
       this.logger.error(`[NETWORK] Erreur scan: ${error.message}`)
       throw error
     }
+  }
+
+  async submitScan(config: NmapScanConfig, userId?: string) {
+    const task = new ScanTask(
+      () => this.scanNetwork(config.target, userId),
+      { userId, priority: 10 }
+    );
+    this.executionManager.submit(task);
+    return task.id;
   }
 
   async updateDeviceStats(device: Device): Promise<Device> {

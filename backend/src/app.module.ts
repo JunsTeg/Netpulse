@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module';
 import { NetworkModule } from './modules/network/network.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { TopologyModule } from './modules/topology';
+import { ExecutionManagerModule } from './execution-manager/execution-manager.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { TopologyModule } from './modules/topology';
     UsersModule,
     NetworkModule,
     TopologyModule,
+    ExecutionManagerModule,
   ],
   controllers: [AppController],
   providers: [
