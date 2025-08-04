@@ -73,21 +73,22 @@ const _nav = [
         to: '/anomalies',
         icon: <CIcon icon={cilWarning} customClassName="nav-icon" />,
       },
-      {
+      /*{
         component: CNavItem,
         name: 'Alertes',
         to: '/alert',
         icon: <CIcon icon={cilBell} customClassName="nav-icon" />,
       },
+      */
     ],
   },
   {
     component: CNavTitle,
-    name: 'Logs',
+    name: 'Historique ',
   },
   {
     component: CNavGroup,
-    name: 'Logs',
+    name: 'Historique',
     icon: <CIcon icon={cilList} customClassName="nav-icon" />,
     items: [
       {
@@ -96,12 +97,12 @@ const _nav = [
         to: '/logs',
         icon: <CIcon icon={cilList} customClassName="nav-icon" />,
       },
-      {
+      /*{
         component: CNavItem,
         name: 'Historique',
         to: '/history',
         icon: <CIcon icon={cilHistory} customClassName="nav-icon" />,
-      },
+      },*/
     ],
   },
   {
@@ -118,47 +119,6 @@ const _nav = [
         name: 'Utilisateurs',
         to: '/users',
         icon: <CIcon icon={cilUser} customClassName="nav-icon" />,
-      },
-      {
-        component: CNavItem,
-        name: 'Parametres',
-        to: '/settings',
-        icon: <CIcon icon={cilSettings} customClassName="nav-icon" />,
-      },
-      {
-        component: CNavItem,
-        name: 'Seuils dalerte',
-        to: '/thresholds',
-        icon: <CIcon icon={cilSpeedometer} customClassName="nav-icon" />,
-      },
-    ],
-  },
-  {
-    component: CNavTitle,
-    name: 'Audit & Feedback',
-  },
-  {
-    component: CNavGroup,
-    name: 'Audit & Feedback',
-    icon: <CIcon icon={cilBellExclamation} customClassName="nav-icon" />,
-    items: [
-      {
-        component: CNavItem,
-        name: 'Notifications',
-        to: '/notifications',
-        icon: <CIcon icon={cilBellExclamation} customClassName="nav-icon" />,
-      },
-      {
-        component: CNavItem,
-        name: 'Feedback alertes',
-        to: '/feedback',
-        icon: <CIcon icon={cilCommentSquare} customClassName="nav-icon" />,
-      },
-      {
-        component: CNavItem,
-        name: 'Rapports',
-        to: '/reports',
-        icon: <CIcon icon={cilFile} customClassName="nav-icon" />,
       },
     ],
   },

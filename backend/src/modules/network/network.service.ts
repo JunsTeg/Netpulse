@@ -42,6 +42,58 @@ export class NetworkService {
     }
   }
 
+  /**
+   * Nouvelle méthode pour le scan rapide minimal - détection uniquement sans enrichissement
+   * Utilisée spécifiquement pour le mode "rapide" du scan manuel
+   */
+  async scanNetworkQuick(target: string, userId?: string): Promise<NmapScanResult> {
+    try {
+      this.logger.log(`[NETWORK] Démarrage scan réseau rapide: ${target}`)
+
+      const config: NmapScanConfig = {
+        target,
+        osDetection: false, // Pas de détection OS pour le mode rapide
+        serviceDetection: false, // Pas de détection de services pour le mode rapide
+        timing: 4,
+      }
+
+      const result = await this.nmapAgent.executeQuickDetection(config, userId)
+
+      this.logger.log(`[NETWORK] Scan rapide terminé: ${result.devices.length} appareils trouvés`)
+
+      return result
+    } catch (error) {
+      this.logger.error(`[NETWORK] Erreur scan rapide: ${error.message}`)
+      throw error
+    }
+  }
+
+  /**
+   * Version optimisée du scan réseau SANS collecte de statistiques
+   * Réduit significativement le temps d'exécution tout en préservant la complétude
+   */
+  async scanNetworkOptimized(target: string, userId?: string): Promise<NmapScanResult> {
+    try {
+      this.logger.log(`[NETWORK] Démarrage scan réseau optimisé: ${target}`)
+
+      const config: NmapScanConfig = {
+        target,
+        osDetection: true,
+        serviceDetection: true,
+        timing: 4,
+      }
+
+      const result = await this.nmapAgent.executeWithoutStats(config, userId)
+
+      this.logger.log(`[NETWORK] Scan optimisé terminé: ${result.devices.length} appareils trouvés`)
+
+      return result
+    } catch (error) {
+      this.logger.error(`[NETWORK] Erreur scan optimisé: ${error.message}`)
+      throw error
+    }
+  }
+
   async submitScan(config: NmapScanConfig, userId?: string) {
     const task = new ScanTask(
       () => this.scanNetwork(config.target, userId),

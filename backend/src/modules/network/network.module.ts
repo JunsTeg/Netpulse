@@ -1,4 +1,4 @@
-import { Module, forwardRef } from "@nestjs/common"
+import { Module } from "@nestjs/common"
 import { ScheduleModule } from "@nestjs/schedule"
 import { NetworkService } from "./network.service"
 import { EnhancedNetworkService } from "./enhanced-network.service"
@@ -18,14 +18,13 @@ import { AppareilRepository } from "./appareil.repository"
 import { OuiService } from "./services/oui.service"
 import { DeviceTypeService } from "./services/device-type.service"
 import { TopologyModule } from '../topology/topology.module';
-import { TopologyService } from '../topology/topology.service';
 import { ExecutionManagerModule } from '../../execution-manager/execution-manager.module';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
     AuthModule,
-    forwardRef(() => TopologyModule),
+    TopologyModule,
     ExecutionManagerModule,
   ],
   controllers: [NetworkController],
@@ -55,7 +54,6 @@ import { ExecutionManagerModule } from '../../execution-manager/execution-manage
     // Stratégie JWT pour l'authentification
     JwtStrategy,
     AppareilRepository,
-    TopologyService,
   ],
   exports: [
     // Services centralisés
@@ -70,7 +68,6 @@ import { ExecutionManagerModule } from '../../execution-manager/execution-manage
     PythonAdvancedService,
     RouterQueryService,
     TracerouteAgentService,
-    TopologyService,
   ],
 })
 export class NetworkModule {}

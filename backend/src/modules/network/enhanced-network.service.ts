@@ -6,6 +6,7 @@ import { NmapAgentService } from "./agents/nmap.service"
 import { TracerouteAgentService } from "./agents/traceroute.service"
 import { NetstatAgentService } from "./agents/netstat.service"
 import type { Device, NmapScanConfig } from "./device.model"
+import { DeviceType } from "./device.model"
 import type { NetworkTopologyData } from "./network.types"
 import { exec } from "child_process"
 import { promisify } from "util"
@@ -22,6 +23,8 @@ interface EnhancedScanConfig extends NmapScanConfig {
   deepScan?: boolean
   stealth?: boolean
   threads?: number
+  psTimeout?: number // Timeout pour PowerShell (ms)
+  pyTimeout?: number // Timeout pour Python (ms)
 }
 
 interface EnhancedScanResult {
@@ -200,23 +203,45 @@ export class EnhancedNetworkService extends NetworkService {
         hasPowerShell,
       })
 
-      // Logique de sélection intelligente
-      if (isWindows && hasPowerShell && hasAdminRights) {
-        // Windows avec PowerShell et droits admin = méthode optimale
-        return "powershell"
-      }
-
-      if (hasPython && (config.deepScan || (config.threads && config.threads > 30))) {
-        // Python pour les scans approfondis ou haute performance
-        return "python"
-      }
-
-      if (isWindows && hasPowerShell && hasPython) {
-        // Environnement complet = scan hybride
+      // Logique de sélection intelligente optimisée pour le scan automatique
+      if (isWindows && hasPowerShell && hasPython && hasAdminRights) {
+        // Environnement Windows complet avec tous les outils = scan hybride optimal
+        this.enhancedLogger.log(`[ENHANCED] Sélection: Scan hybride (PowerShell + Python)`)
         return "hybrid"
       }
 
+      if (isWindows && hasPowerShell && hasAdminRights) {
+        // Windows avec PowerShell et droits admin = très efficace
+        this.enhancedLogger.log(`[ENHANCED] Sélection: PowerShell (droits admin)`)
+        return "powershell"
+      }
+
+      if (hasPython && config.deepScan) {
+        // Python pour les scans approfondis
+        this.enhancedLogger.log(`[ENHANCED] Sélection: Python (mode approfondi)`)
+        return "python"
+      }
+
+      if (hasPython && config.threads && config.threads > 50) {
+        // Python pour les scans haute performance
+        this.enhancedLogger.log(`[ENHANCED] Sélection: Python (haute performance)`)
+        return "python"
+      }
+
+      if (isWindows && hasPowerShell) {
+        // Windows avec PowerShell sans droits admin
+        this.enhancedLogger.log(`[ENHANCED] Sélection: PowerShell (droits limités)`)
+        return "powershell"
+      }
+
+      if (hasPython) {
+        // Python disponible
+        this.enhancedLogger.log(`[ENHANCED] Sélection: Python`)
+        return "python"
+      }
+
       // Fallback vers nmap
+      this.enhancedLogger.log(`[ENHANCED] Sélection: Nmap (fallback)`)
       return "nmap"
     } catch (error) {
       this.enhancedLogger.warn(`[ENHANCED] Erreur détection environnement: ${error.message}`)
@@ -273,15 +298,35 @@ export class EnhancedNetworkService extends NetworkService {
 
   private async executeHybridScan(config: EnhancedScanConfig): Promise<Device[]> {
     try {
-      this.enhancedLogger.log(`[ENHANCED] Démarrage scan hybride`)
+      this.enhancedLogger.log(`[ENHANCED] Démarrage scan hybride optimisé`)
 
-      // Exécution des scans en parallèle
+      // Configuration optimisée pour chaque méthode
+      const psConfig = { ...config, threads: Math.floor((config.threads || 100) * 0.6) }
+      const pyConfig = { ...config, threads: Math.floor((config.threads || 100) * 0.4) }
+
+      // Timeouts configurables (30s par défaut)
+      const psTimeout = config.psTimeout || 30000
+      const pyTimeout = config.pyTimeout || 30000
+
+      // Exécution des scans en parallèle avec timeouts individuels
+      const hybridStart = Date.now()
+      
       const [psResult, pyResult] = await Promise.allSettled([
-        this.executePowerShellScan(config).catch((error) => {
+        Promise.race([
+          this.executePowerShellScan(psConfig),
+          new Promise<Device[]>((_, reject) => 
+            setTimeout(() => reject(new Error(`PowerShell timeout (${psTimeout}ms)`)), psTimeout)
+          )
+        ]).catch((error) => {
           this.enhancedLogger.warn(`[HYBRID] PowerShell échoué: ${error.message}`)
           return []
         }),
-        this.executePythonScan(config).catch((error) => {
+        Promise.race([
+          this.executePythonScan(pyConfig),
+          new Promise<Device[]>((_, reject) => 
+            setTimeout(() => reject(new Error(`Python timeout (${pyTimeout}ms)`)), pyTimeout)
+          )
+        ]).catch((error) => {
           this.enhancedLogger.warn(`[HYBRID] Python échoué: ${error.message}`)
           return []
         }),
@@ -293,15 +338,42 @@ export class EnhancedNetworkService extends NetworkService {
       this.enhancedLogger.log(`[HYBRID] PowerShell: ${psDevices.length} appareils`)
       this.enhancedLogger.log(`[HYBRID] Python: ${pyDevices.length} appareils`)
 
-      // Fusion intelligente des résultats
+      // Fusion intelligente des résultats avec priorité
       const mergedDevices = this.mergeDeviceResults(psDevices, pyDevices)
+      const hybridDuration = Date.now() - hybridStart
 
-      this.enhancedLogger.log(`[HYBRID] Fusion: ${mergedDevices.length} appareils uniques`)
+      this.enhancedLogger.log(`[HYBRID] Fusion: ${mergedDevices.length} appareils uniques en ${hybridDuration}ms`)
+
+      // Si aucun appareil trouvé, essayer le scan Nmap comme fallback
+      if (mergedDevices.length === 0) {
+        this.enhancedLogger.warn(`[HYBRID] Aucun appareil trouvé, fallback vers Nmap`)
+        try {
+          const nmapResult = await this.scanNetwork(config.target, "system-hybrid-fallback")
+          if (nmapResult.success) {
+            this.enhancedLogger.log(`[HYBRID] Fallback Nmap réussi: ${nmapResult.devices.length} appareils`)
+            return nmapResult.devices
+          } else {
+            this.enhancedLogger.error(`[HYBRID] Fallback Nmap échoué: ${nmapResult.error}`)
+            return []
+          }
+        } catch (fallbackError) {
+          this.enhancedLogger.error(`[HYBRID] Erreur fallback Nmap: ${fallbackError.message}`)
+          return []
+        }
+      }
 
       return mergedDevices
     } catch (error) {
       this.enhancedLogger.error(`[ENHANCED] Erreur scan hybride: ${error.message}`)
-      throw error
+      // Fallback vers scan Nmap en cas d'erreur
+      try {
+        this.enhancedLogger.log(`[HYBRID] Fallback vers scan Nmap`)
+        const nmapResult = await this.scanNetwork(config.target, "system-hybrid-error")
+        return nmapResult.devices
+      } catch (fallbackError) {
+        this.enhancedLogger.error(`[HYBRID] Échec du fallback Nmap: ${fallbackError.message}`)
+        throw error
+      }
     }
   }
 
@@ -313,25 +385,29 @@ export class EnhancedNetworkService extends NetworkService {
       deviceMap.set(device.ipAddress, device)
     })
 
-    // Fusion avec les appareils Python
+    // Fusion intelligente avec les appareils Python
     pyDevices.forEach((pyDevice) => {
       const existing = deviceMap.get(pyDevice.ipAddress)
 
       if (existing) {
-        // Fusion des données (PowerShell prioritaire, Python complément)
+        // Fusion des données avec logique intelligente
         const merged: Device = {
           ...existing,
-          // Garder le meilleur hostname
-          hostname: existing.hostname || pyDevice.hostname,
-          // Garder la meilleure détection MAC
+          // Priorité au hostname le plus informatif
+          hostname: this.selectBestHostname(existing.hostname, pyDevice.hostname),
+          // Priorité à la MAC la plus fiable
           macAddress: existing.macAddress || pyDevice.macAddress,
-          // Fusionner les ports ouverts
+          // Fusionner les informations OS
+          os: existing.os !== 'Unknown' ? existing.os : pyDevice.os,
+          // Fusionner les types d'appareils
+          deviceType: this.selectBestDeviceType(existing.deviceType, pyDevice.deviceType),
+          // Fusionner les services de manière intelligente
           stats: {
             ...existing.stats,
-            services: [
-              ...existing.stats.services,
-              ...pyDevice.stats.services.filter((s) => !existing.stats.services.some((es) => es.port === s.port)),
-            ],
+            services: this.mergeServices(existing.stats.services, pyDevice.stats.services),
+            // Garder les meilleures statistiques
+            latency: Math.min(existing.stats.latency || Infinity, pyDevice.stats.latency || Infinity),
+            bandwidth: this.mergeBandwidth(existing.stats.bandwidth, pyDevice.stats.bandwidth),
           },
         }
 
@@ -343,6 +419,134 @@ export class EnhancedNetworkService extends NetworkService {
     })
 
     return Array.from(deviceMap.values())
+  }
+
+  private selectBestHostname(psHostname: string, pyHostname: string): string {
+    if (!psHostname || psHostname === 'Unknown') return pyHostname
+    if (!pyHostname || pyHostname === 'Unknown') return psHostname
+    
+    // Priorité au hostname le plus descriptif (plus long, contient des mots-clés)
+    const psScore = this.calculateHostnameScore(psHostname)
+    const pyScore = this.calculateHostnameScore(pyHostname)
+    
+    return psScore >= pyScore ? psHostname : pyHostname
+  }
+
+  private calculateHostnameScore(hostname: string): number {
+    if (!hostname) return 0
+    
+    let score = hostname.length // Score de base basé sur la longueur
+    
+    // Bonus pour les mots-clés informatifs
+    const keywords = ['server', 'router', 'switch', 'printer', 'nas', 'desktop', 'laptop', 'mobile']
+    keywords.forEach(keyword => {
+      if (hostname.toLowerCase().includes(keyword)) {
+        score += 10
+      }
+    })
+    
+    // Malus pour les noms génériques
+    if (hostname.match(/^[0-9.]+$/)) score -= 5 // IP uniquement
+    if (hostname.toLowerCase().includes('unknown')) score -= 10
+    
+    return score
+  }
+
+  private selectBestDeviceType(psType: string, pyType: string): DeviceType {
+    if (!psType || psType === 'Unknown') return this.mapStringToDeviceType(pyType)
+    if (!pyType || pyType === 'Unknown') return this.mapStringToDeviceType(psType)
+    
+    // Priorité aux types plus spécifiques
+    const specificTypes = ['Router', 'Switch', 'Printer', 'Server', 'NAS']
+    const psSpecific = specificTypes.includes(psType)
+    const pySpecific = specificTypes.includes(pyType)
+    
+    if (psSpecific && !pySpecific) return this.mapStringToDeviceType(psType)
+    if (pySpecific && !psSpecific) return this.mapStringToDeviceType(pyType)
+    
+    return this.mapStringToDeviceType(psType) // Par défaut, garder PowerShell
+  }
+
+  private mapStringToDeviceType(typeString: string): DeviceType {
+    if (!typeString) return DeviceType.OTHER
+    
+    const lowerType = typeString.toLowerCase()
+    
+    switch (lowerType) {
+      case 'router':
+        return DeviceType.ROUTER
+      case 'switch':
+        return DeviceType.SWITCH
+      case 'ap':
+      case 'access point':
+      case 'accesspoint':
+        return DeviceType.AP
+      case 'server':
+        return DeviceType.SERVER
+      case 'desktop':
+        return DeviceType.DESKTOP
+      case 'laptop':
+        return DeviceType.LAPTOP
+      case 'mobile':
+      case 'phone':
+      case 'smartphone':
+        return DeviceType.MOBILE
+      case 'printer':
+        return DeviceType.PRINTER
+      default:
+        return DeviceType.OTHER
+    }
+  }
+
+  private mergeServices(psServices: any[], pyServices: any[]): any[] {
+    const serviceMap = new Map<number, any>()
+    
+    // Validation et nettoyage des services PowerShell
+    const validPsServices = Array.isArray(psServices) ? psServices.filter(s => s && typeof s === 'object' && s.port) : []
+    
+    // Validation et nettoyage des services Python
+    const validPyServices = Array.isArray(pyServices) ? pyServices.filter(s => s && typeof s === 'object' && s.port) : []
+    
+    // Ajouter les services PowerShell
+    validPsServices.forEach(service => {
+      if (typeof service.port === 'number' && service.port > 0 && service.port <= 65535) {
+        serviceMap.set(service.port, service)
+      }
+    })
+    
+    // Fusionner avec les services Python
+    validPyServices.forEach(pyService => {
+      if (typeof pyService.port === 'number' && pyService.port > 0 && pyService.port <= 65535) {
+        const existing = serviceMap.get(pyService.port)
+        if (!existing) {
+          serviceMap.set(pyService.port, pyService)
+        } else {
+          // Fusionner les informations de service
+          serviceMap.set(pyService.port, {
+            ...existing,
+            name: existing.name || pyService.name,
+            version: existing.version || pyService.version,
+            banner: existing.banner || pyService.banner,
+            // Garder le meilleur statut
+            status: existing.status === 'open' ? existing.status : pyService.status,
+          })
+        }
+      }
+    })
+    
+    return Array.from(serviceMap.values())
+  }
+
+  private mergeBandwidth(psBandwidth: any, pyBandwidth: any): any {
+    if (!psBandwidth && !pyBandwidth) return undefined
+    if (!psBandwidth) return pyBandwidth
+    if (!pyBandwidth) return psBandwidth
+    
+    // Retourner la bande passante la plus élevée
+    return {
+      download: Math.max(psBandwidth.download || 0, pyBandwidth.download || 0),
+      upload: Math.max(psBandwidth.upload || 0, pyBandwidth.upload || 0),
+    }
   }
 
   private async enrichDevicesData(devices: Device[]): Promise<Device[]> {
@@ -445,11 +649,26 @@ export class EnhancedNetworkService extends NetworkService {
   private async checkAdminRights(): Promise<boolean> {
     try {
       if (process.platform === "win32") {
+        // Windows: vérifier les droits administrateur
         const { stdout } = await execAsync("net session 2>nul")
         return stdout.length > 0
+      } else {
+        // Unix/Linux: vérifier si l'utilisateur est root
+        try {
+          const uid = process.getuid()
+          return uid === 0
+        } catch (error) {
+          // Si getuid() n'est pas disponible, essayer une autre méthode
+          try {
+            const { stdout } = await execAsync("id -u")
+            return stdout.trim() === "0"
+          } catch {
+            return false
+          }
+        }
       }
-      return process.getuid && process.getuid() === 0
-    } catch {
+    } catch (error) {
+      this.enhancedLogger.debug(`[ENHANCED] Impossible de vérifier les droits admin: ${error.message}`)
       return false
     }
   }

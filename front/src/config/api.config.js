@@ -45,9 +45,18 @@ const API_CONFIG = {
       SCAN: '/api/network/scan',
       DEVICES: '/api/network/devices',
       DEVICE: (id) => `/api/network/devices/${id}`,
-      TOPOLOGY: '/api/network/topology',
+      TOPOLOGY: '/api/topology/last',
       STATS: (id) => `/api/network/devices/${id}/stats`,
       DETECT: '/api/network/detect',
+    },
+    TOPOLOGY: {
+      LAST: '/api/topology/last',
+      GENERATE: '/api/topology/generate-from-database',
+      GET: (id) => `/api/topology/${id}`,
+      DELETE: (id) => `/api/topology/${id}`,
+      CLEANUP: '/api/topology/cleanup',
+      CACHE_STATS: '/api/topology/cache/stats',
+      CLEAR_CACHE: '/api/topology/cache/clear',
     }
   },
   

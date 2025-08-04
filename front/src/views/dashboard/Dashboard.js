@@ -15,55 +15,20 @@ import {
   CBadge,
   CListGroup,
   CListGroupItem,
+  CSpinner,
+  CAlert,
+  CButton,
 } from '@coreui/react'
 import { Line, Bar } from 'react-chartjs-2'
 import 'chart.js/auto'
 import { cilWarning, cilSpeedometer, cilMemory, cilDevices, cilBell, cilUser, cilSettings } from '@coreui/icons'
 import CIcon from '@coreui/icons-react'
-
-// Donnees simulees pour le dashboard
-// TODO: Remplacer par les vraies données du backend
-const fakeStats = {
-  // Données disponibles via /network/dashboard/summary
-  devicesActive: 18,
-  devicesInactive: 2,
-  alertsActive: 3,
-  incidentsCritical: 1,
-  totalDownload: 1024,
-  totalUpload: 512,
-  evolution24h: [
-    { hour: 0, download: 100, upload: 50 },
-    { hour: 1, download: 120, upload: 60 },
-    // ... autres heures
-  ],
-
-  // Données manquantes dans le backend - à implémenter
-  anomalies: [
-    { id: '1', type: 'Port Scan', device: '192.168.1.10', time: '10:15' },
-    { id: '2', type: 'High Latency', device: '192.168.1.24', time: '10:12' },
-  ],
-  topDevices: [
-    { id: '1', host: 'Switch-01', cpu: 88, latency: 270 },
-    { id: '2', host: 'Server-DB', cpu: 91, latency: 180 },
-  ],
-  agentStatus: [
-    { id: 'a1', name: 'Agent Nmap', status: 'OK', lastRun: '10:10' },
-    { id: 'a2', name: 'Agent Stats', status: 'KO', lastRun: '09:48' },
-    { id: 'a3', name: 'Agent Ping', status: 'OK', lastRun: '10:05' },
-  ],
-  activityLog: [
-    { id: 'log1', user: 'admin', action: 'Modifié seuil de latence', time: '10:01' },
-    { id: 'log2', user: 'monitor', action: 'Lancé un scan manuel', time: '09:55' },
-  ],
-  // Données pour graphique de latence (manquantes)
-  latencyData: [100, 120, 90, 140, 80, 200, 130],
-  latencyLabels: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'],
-}
+import dashboardService from '../../services/dashboardService'
 
 // Ajout d'un utilitaire pour récupérer les couleurs dynamiques
 const getCssVar = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
 
-const StatCard = ({ title, value, icon, subtitle }) => (
+const StatCard = ({ title, value, icon, subtitle, loading = false }) => (
   <CCard className="h-100">
     <CCardBody className="d-flex flex-column justify-content-center align-items-center text-center p-4">
       <div className="d-flex align-items-center mb-3">
@@ -71,9 +36,13 @@ const StatCard = ({ title, value, icon, subtitle }) => (
         <span className="fw-semibold">{title}</span>
       </div>
       <div className="mb-2">
-        <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: getCssVar('--color-primary') }}>
-          {value}
-        </div>
+        {loading ? (
+          <CSpinner size="sm" />
+        ) : (
+          <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: getCssVar('--color-primary') }}>
+            {value}
+          </div>
+        )}
       </div>
       {subtitle && (
         <div style={{ fontSize: '0.9rem', color: getCssVar('--color-text-secondary-light') }}>
@@ -85,20 +54,135 @@ const StatCard = ({ title, value, icon, subtitle }) => (
 );
 
 const Dashboard = () => {
-  const [data, setData] = useState(fakeStats)
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [lastUpdate, setLastUpdate] = useState(null)
 
+  // Fonction pour charger les données du dashboard
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const dashboardData = await dashboardService.getDashboardData()
+      setData(dashboardData)
+      setLastUpdate(new Date())
+    } catch (err) {
+      console.error('Erreur chargement dashboard:', err)
+      setError('Erreur lors du chargement des données: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Fonction pour lancer un scan réseau
+  const handleNetworkScan = async () => {
+    try {
+      setLoading(true)
+      
+      // Enregistrer l'activité
+      await dashboardService.logActivity({
+        user: 'admin',
+        action: 'Lancé un scan réseau manuel',
+        type: 'scan',
+        details: 'Scan complet du réseau déclenché manuellement'
+      })
+      
+      await dashboardService.triggerNetworkScan('comprehensive')
+      // Recharger les données après le scan
+      await loadDashboardData()
+    } catch (err) {
+      setError('Erreur lors du scan réseau: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Fonction pour générer un rapport
+  const handleGenerateReport = async () => {
+    try {
+      setLoading(true)
+      
+      // Enregistrer l'activité
+      await dashboardService.logActivity({
+        user: 'admin',
+        action: 'Généré un rapport dashboard',
+        type: 'report',
+        details: 'Rapport de synthèse du dashboard généré'
+      })
+      
+      await dashboardService.generateReport('dashboard')
+      // Optionnel: afficher un message de succès
+    } catch (err) {
+      setError('Erreur lors de la génération du rapport: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Chargement initial uniquement
   useEffect(() => {
-    // Socket.IO ou fetch pour donnees live
+    loadDashboardData()
   }, [])
+
+  // Affichage du loading initial
+  if (loading && !data) {
+    return (
+      <div className="p-4 d-flex justify-content-center align-items-center" style={{ minHeight: '400px' }}>
+        <div className="text-center">
+          <CSpinner size="lg" />
+          <div className="mt-3">Chargement du dashboard...</div>
+        </div>
+      </div>
+    )
+  }
+
+  // Affichage de l'erreur
+  if (error) {
+    return (
+      <div className="p-4">
+        <CAlert color="danger" dismissible onClose={() => setError(null)}>
+          <strong>Erreur:</strong> {error}
+        </CAlert>
+        <div className="text-center mt-3">
+          <CButton color="primary" onClick={loadDashboardData}>
+            Réessayer
+          </CButton>
+        </div>
+      </div>
+    )
+  }
+
+  // Données par défaut si pas de données
+  const dashboardData = data || {
+    devicesActive: 0,
+    devicesInactive: 0,
+    alertsActive: 0,
+    incidentsCritical: 0,
+    anomalies: [],
+    topDevices: [],
+    agentStatus: [],
+    activityLog: [],
+    latencyData: [100, 120, 90, 140, 80, 200, 130],
+    latencyLabels: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'],
+  }
 
   return (
     <div className="p-4">
       {/* Header */}
       <CCard className="mb-4">
         <CCardBody className="text-center py-4">
-          <h1 className="display-4 fw-bold text-primary mb-0">
-            🚀 CENTRE DE CONTRÔLE NETPULSE
-          </h1>
+          <div>
+            <h1 className="display-4 fw-bold text-primary mb-0">
+              🚀 CENTRE DE CONTRÔLE NETPULSE
+            </h1>
+            {lastUpdate && (
+              <small className="text-muted">
+                Dernière mise à jour: {lastUpdate.toLocaleTimeString('fr-FR')}
+              </small>
+            )}
+          </div>
         </CCardBody>
       </CCard>
 
@@ -107,33 +191,37 @@ const Dashboard = () => {
         <CCol xs={12} sm={6} lg={3}>
           <StatCard 
             title="Alertes Actives" 
-            value={data.alertsActive} 
+            value={dashboardData.alertsActive} 
             icon={cilBell}
             subtitle="Surveillance en temps réel"
+            loading={loading}
           />
         </CCol>
         <CCol xs={12} sm={6} lg={3}>
           <StatCard 
             title="Appareils Connectés" 
-            value={`${data.devicesActive}/${data.devicesActive + data.devicesInactive}`} 
+            value={`${dashboardData.devicesActive}`} 
             icon={cilDevices}
             subtitle="Réseau opérationnel"
+            loading={loading}
           />
         </CCol>
         <CCol xs={12} sm={6} lg={3}>
           <StatCard 
             title="Incidents Critiques" 
-            value={data.incidentsCritical} 
+            value={dashboardData.incidentsCritical} 
             icon={cilWarning}
             subtitle="Action requise"
+            loading={loading}
           />
         </CCol>
         <CCol xs={12} sm={6} lg={3}>
           <StatCard 
             title="Avertissements" 
-            value={data.alertsActive - data.incidentsCritical} 
+            value={dashboardData.alertsActive - dashboardData.incidentsCritical} 
             icon={cilSpeedometer}
             subtitle="Surveillance renforcée"
+            loading={loading}
           />
         </CCol>
       </CRow>
@@ -148,11 +236,11 @@ const Dashboard = () => {
             <CCardBody className="d-flex align-items-center justify-content-center" style={{ height: '300px' }}>
               <Line
                 data={{
-                  labels: data.latencyLabels,
+                  labels: dashboardData.latencyLabels,
                   datasets: [
                     {
                       label: 'Latence (ms)',
-                      data: data.latencyData,
+                      data: dashboardData.latencyData,
                       borderColor: getCssVar('--color-primary'),
                       backgroundColor: 'rgba(74, 158, 255, 0.1)',
                       fill: true,
@@ -201,50 +289,57 @@ const Dashboard = () => {
               <h5 className="card-title mb-0">⚡ Utilisation CPU - Machines Prioritaires</h5>
             </CCardHeader>
             <CCardBody className="d-flex align-items-center justify-content-center" style={{ height: '300px' }}>
-              <Bar
-                data={{
-                  labels: data.topDevices.map((d) => d.host),
-                  datasets: [
-                    {
-                      label: 'Utilisation CPU (%)',
-                      data: data.topDevices.map((d) => d.cpu),
-                      backgroundColor: [getCssVar('--color-primary'), getCssVar('--color-secondary'), getCssVar('--color-tertiary')],
-                      borderRadius: 8,
-                      borderWidth: 2,
-                      borderColor: getCssVar('--color-primary'),
-                    },
-                  ],
-                }}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: {
-                    legend: {
-                      labels: {
-                        color: getCssVar('--color-secondary')
-                      }
-                    }
-                  },
-                  scales: {
-                    y: {
-                      ticks: {
-                        color: getCssVar('--color-secondary')
+              {dashboardData.topDevices.length > 0 ? (
+                <Bar
+                  data={{
+                    labels: dashboardData.topDevices.map((d) => d.host),
+                    datasets: [
+                      {
+                        label: 'Utilisation CPU (%)',
+                        data: dashboardData.topDevices.map((d) => d.cpu),
+                        backgroundColor: [getCssVar('--color-primary'), getCssVar('--color-secondary'), getCssVar('--color-tertiary')],
+                        borderRadius: 8,
+                        borderWidth: 2,
+                        borderColor: getCssVar('--color-primary'),
                       },
-                      grid: {
-                        color: 'rgba(168, 199, 232, 0.1)'
+                    ],
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: {
+                        labels: {
+                          color: getCssVar('--color-secondary')
+                        }
                       }
                     },
-                    x: {
-                      ticks: {
-                        color: getCssVar('--color-secondary')
+                    scales: {
+                      y: {
+                        ticks: {
+                          color: getCssVar('--color-secondary')
+                        },
+                        grid: {
+                          color: 'rgba(168, 199, 232, 0.1)'
+                        }
                       },
-                      grid: {
-                        color: 'rgba(168, 199, 232, 0.1)'
+                      x: {
+                        ticks: {
+                          color: getCssVar('--color-secondary')
+                        },
+                        grid: {
+                          color: 'rgba(168, 199, 232, 0.1)'
+                        }
                       }
                     }
-                  }
-                }}
-              />
+                  }}
+                />
+              ) : (
+                <div className="text-center text-muted">
+                  <CIcon icon={cilDevices} size="xl" className="mb-3" />
+                  <p>Aucune machine à risque détectée</p>
+                </div>
+              )}
             </CCardBody>
           </CCard>
         </CCol>
@@ -258,28 +353,42 @@ const Dashboard = () => {
               <h5 className="card-title mb-0">🚨 Détection d'Anomalies</h5>
             </CCardHeader>
             <CCardBody className="p-0">
-              <CTable hover responsive align="middle" className="mb-0">
-                <CTableHead>
-                  <CTableRow>
-                    <CTableHeaderCell className="text-primary">Type</CTableHeaderCell>
-                    <CTableHeaderCell className="text-primary">Appareil</CTableHeaderCell>
-                    <CTableHeaderCell className="text-primary">Heure</CTableHeaderCell>
-                  </CTableRow>
-                </CTableHead>
-                <CTableBody>
-                  {data.anomalies.map((anomaly) => (
-                    <CTableRow key={anomaly.id}>
-                      <CTableDataCell>
-                        <CBadge color="danger" style={{ background: getCssVar('--color-danger') }}>
-                          {anomaly.type}
-                        </CBadge>
-                      </CTableDataCell>
-                      <CTableDataCell>{anomaly.device}</CTableDataCell>
-                      <CTableDataCell>{anomaly.time}</CTableDataCell>
+              {dashboardData.anomalies.length > 0 ? (
+                <CTable hover responsive align="middle" className="mb-0">
+                  <CTableHead>
+                    <CTableRow>
+                      <CTableHeaderCell className="text-primary">Type</CTableHeaderCell>
+                      <CTableHeaderCell className="text-primary">Appareil</CTableHeaderCell>
+                      <CTableHeaderCell className="text-primary">Heure</CTableHeaderCell>
                     </CTableRow>
-                  ))}
-                </CTableBody>
-              </CTable>
+                  </CTableHead>
+                  <CTableBody>
+                    {dashboardData.anomalies.map((anomaly) => (
+                      <CTableRow key={anomaly.id}>
+                        <CTableDataCell>
+                          <CBadge 
+                            color={anomaly.severity === 'critical' ? 'danger' : 'warning'} 
+                            style={{ 
+                              background: anomaly.severity === 'critical' 
+                                ? getCssVar('--color-danger') 
+                                : getCssVar('--color-warning') 
+                            }}
+                          >
+                            {anomaly.type}
+                          </CBadge>
+                        </CTableDataCell>
+                        <CTableDataCell>{anomaly.device}</CTableDataCell>
+                        <CTableDataCell>{anomaly.time}</CTableDataCell>
+                      </CTableRow>
+                    ))}
+                  </CTableBody>
+                </CTable>
+              ) : (
+                <div className="text-center py-4 text-muted">
+                  <CIcon icon={cilWarning} size="xl" className="mb-3" />
+                  <p>Aucune anomalie détectée</p>
+                </div>
+              )}
             </CCardBody>
           </CCard>
         </CCol>
@@ -290,37 +399,44 @@ const Dashboard = () => {
               <h5 className="card-title mb-0">⚠️ Machines à Risque Élevé</h5>
             </CCardHeader>
             <CCardBody className="p-0">
-              <CTable hover responsive align="middle" className="mb-0">
-                <CTableHead>
-                  <CTableRow>
-                    <CTableHeaderCell className="text-primary">Nom</CTableHeaderCell>
-                    <CTableHeaderCell className="text-primary">CPU</CTableHeaderCell>
-                    <CTableHeaderCell className="text-primary">Latence</CTableHeaderCell>
-                  </CTableRow>
-                </CTableHead>
-                <CTableBody>
-                  {data.topDevices.map((device) => (
-                    <CTableRow key={device.id}>
-                      <CTableDataCell className="fw-semibold">{device.host}</CTableDataCell>
-                      <CTableDataCell>
-                        <div className="d-flex align-items-center">
-                          <CProgress
-                            className="flex-grow-1 me-2"
-                            value={device.cpu}
-                            color={device.cpu > 70 ? 'danger' : 'warning'}
-                            style={{ 
-                              background: 'rgba(26, 31, 58, 0.8)',
-                              borderRadius: '8px'
-                            }}
-                          />
-                          <span className="fw-semibold">{device.cpu}%</span>
-                        </div>
-                      </CTableDataCell>
-                      <CTableDataCell>{device.latency} ms</CTableDataCell>
+              {dashboardData.topDevices.length > 0 ? (
+                <CTable hover responsive align="middle" className="mb-0">
+                  <CTableHead>
+                    <CTableRow>
+                      <CTableHeaderCell className="text-primary">Nom</CTableHeaderCell>
+                      <CTableHeaderCell className="text-primary">CPU</CTableHeaderCell>
+                      <CTableHeaderCell className="text-primary">Latence</CTableHeaderCell>
                     </CTableRow>
-                  ))}
-                </CTableBody>
-              </CTable>
+                  </CTableHead>
+                  <CTableBody>
+                    {dashboardData.topDevices.map((device) => (
+                      <CTableRow key={device.id}>
+                        <CTableDataCell className="fw-semibold">{device.host}</CTableDataCell>
+                        <CTableDataCell>
+                          <div className="d-flex align-items-center">
+                            <CProgress
+                              className="flex-grow-1 me-2"
+                              value={device.cpu}
+                              color={device.cpu > 70 ? 'danger' : 'warning'}
+                              style={{ 
+                                background: 'rgba(26, 31, 58, 0.8)',
+                                borderRadius: '8px'
+                              }}
+                            />
+                            <span className="fw-semibold">{device.cpu}%</span>
+                          </div>
+                        </CTableDataCell>
+                        <CTableDataCell>{device.latency} ms</CTableDataCell>
+                      </CTableRow>
+                    ))}
+                  </CTableBody>
+                </CTable>
+              ) : (
+                <div className="text-center py-4 text-muted">
+                  <CIcon icon={cilDevices} size="xl" className="mb-3" />
+                  <p>Aucune machine à risque détectée</p>
+                </div>
+              )}
             </CCardBody>
           </CCard>
         </CCol>
@@ -335,10 +451,10 @@ const Dashboard = () => {
             </CCardHeader>
             <CCardBody className="p-0">
               <CListGroup flush className="border-0">
-                {data.agentStatus.map((agent, index) => (
+                {dashboardData.agentStatus.map((agent, index) => (
                   <CListGroupItem 
                     key={agent.id}
-                    className={`border-0 ${index !== data.agentStatus.length - 1 ? 'border-bottom' : ''}`}
+                    className={`border-0 ${index !== dashboardData.agentStatus.length - 1 ? 'border-bottom' : ''}`}
                     style={{ 
                       background: 'transparent',
                       borderColor: 'rgba(74, 158, 255, 0.2) !important',
@@ -375,10 +491,10 @@ const Dashboard = () => {
             </CCardHeader>
             <CCardBody className="p-0">
               <CListGroup flush className="border-0">
-                {data.activityLog.map((log, index) => (
+                {dashboardData.activityLog.map((log, index) => (
                   <CListGroupItem 
                     key={log.id}
-                    className={`border-0 ${index !== data.activityLog.length - 1 ? 'border-bottom' : ''}`}
+                    className={`border-0 ${index !== dashboardData.activityLog.length - 1 ? 'border-bottom' : ''}`}
                     style={{ 
                       background: 'transparent',
                       borderColor: 'rgba(74, 158, 255, 0.2) !important',
@@ -408,16 +524,23 @@ const Dashboard = () => {
       <CRow>
         <CCol xs={12}>
           <div className="text-center">
-            <button className="btn btn-primary btn-lg me-3" 
-              onClick={() => console.log('Scan réseau lancé')}
+            <CButton 
+              color="primary" 
+              size="lg" 
+              className="me-3"
+              onClick={handleNetworkScan}
+              disabled={loading}
             >
               🔍 Lancer Scan Réseau
-            </button>
-            <button className="btn btn-primary btn-lg" 
-              onClick={() => console.log('Rapport généré')}
+            </CButton>
+            <CButton 
+              color="primary" 
+              size="lg"
+              onClick={handleGenerateReport}
+              disabled={loading}
             >
               📊 Générer Rapport
-            </button>
+            </CButton>
           </div>
         </CCol>
       </CRow>

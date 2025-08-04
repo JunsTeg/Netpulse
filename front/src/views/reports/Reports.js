@@ -26,7 +26,6 @@ import {
   CForm,
   CFormLabel,
   CFormTextarea,
-  CFormDate,
   CFormCheck,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
@@ -34,7 +33,7 @@ import {
   cilFile,
   cilFilter,
   cilReload,
-  cilDownload,
+  cilCloudDownload,
   cilTrash,
   cilPlus,
   cilChart,
@@ -241,7 +240,7 @@ const Reports = () => {
                           // Logique pour telecharger
                         }}
                       >
-                        <CIcon icon={cilDownload} />
+                        <CIcon icon={cilCloudDownload} />
                       </CButton>
                       <CButton
                         color="danger"
@@ -328,7 +327,7 @@ const Reports = () => {
             Fermer
           </CButton>
           <CButton color="primary" className="me-2">
-            <CIcon icon={cilDownload} className="me-2" />
+            <CIcon icon={cilCloudDownload} className="me-2" />
             Telecharger
           </CButton>
           <CButton color="danger">
@@ -362,10 +361,10 @@ const Reports = () => {
               <CFormLabel>Periode</CFormLabel>
               <CRow>
                 <CCol md={6}>
-                  <CFormDate label="Date de debut" />
+                  <CFormInput type="date" />
                 </CCol>
                 <CCol md={6}>
-                  <CFormDate label="Date de fin" />
+                  <CFormInput type="date" />
                 </CCol>
               </CRow>
             </div>

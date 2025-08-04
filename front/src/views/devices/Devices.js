@@ -79,14 +79,16 @@ const Devices = () => {
   const toasterRef = useRef()
   // Ajout d'un état pour le mode de scan en cours
   const [scanMode, setScanMode] = useState(null)
+  // Nouvel état pour le rafraîchissement automatique
+  const [autoRefreshing, setAutoRefreshing] = useState(false)
 
   // Initialisation du token d'authentification
   useEffect(() => {
     const token = authService.getToken()
-    console.log('Token d\'authentification:', token ? 'Présent' : 'Manquant')
+    //console.log('Token d\'authentification:', token ? 'Présent' : 'Manquant')
     if (token) {
       authService.setAuthHeader(token)
-      console.log('Headers axios configurés:', axios.defaults.headers.common)
+      //console.log('Headers axios configurés:', axios.defaults.headers.common)
     } else {
       window.location.href = '/login'
     }
@@ -110,7 +112,7 @@ const Devices = () => {
     return { status: 'Inactif', icon: cilXCircle, color: 'danger' }
   }
 
-  // Fonction pour charger les appareils depuis l'API
+  // Fonction pour charger les appareils depuis l'API (avec logs)
   const fetchDevices = async () => {
     try {
       setLoading(true)
@@ -118,7 +120,7 @@ const Devices = () => {
       
       // Verification du token
       if (!token) {
-        console.log('Token manquant, redirection vers la page de connexion...')
+        //console.log('Token manquant, redirection vers la page de connexion...')
         window.location.href = '/login'
         return
       }
@@ -132,9 +134,9 @@ const Devices = () => {
       // car le backend retourne { success: true, data: [...], count: ... }
       if (response.data && response.data.success && Array.isArray(response.data.data)) {
         setDevices(response.data.data)
-        console.log(`[FRONTEND] ${response.data.count} appareils récupérés avec succès`)
+        //console.log(`[FRONTEND] ${response.data.count} appareils récupérés avec succès`)
       } else {
-        console.warn('[FRONTEND] Format de réponse inattendu:', response.data)
+        //console.warn('[FRONTEND] Format de réponse inattendu:', response.data)
         setDevices([])
       }
       setError(null)
@@ -151,13 +153,39 @@ const Devices = () => {
     }
   }
 
+  // Fonction pour charger les appareils depuis l'API (sans logs - pour auto-refresh)
+  const fetchDevicesNoLog = async () => {
+    try {
+      const token = authService.getToken()
+      
+      // Verification du token
+      if (!token) {
+        return
+      }
+
+      // Configuration du header d'authentification
+      authService.setAuthHeader(token)
+
+      const response = await axios.get('/api/network/devices/no-log')
+      
+      if (response.data && response.data.success && Array.isArray(response.data.data)) {
+        setDevices(response.data.data)
+      } else {
+        setDevices([])
+      }
+    } catch (err) {
+      // Pas d'affichage d'erreur pour l'auto-refresh silencieux
+      console.warn('[FRONTEND] Erreur auto-refresh silencieux:', err.message)
+    }
+  }
+
   // Charger les appareils au montage et verifier l'authentification
   useEffect(() => {
     const initializeAuth = async () => {
       try {
         const token = authService.getToken()
         if (!token) {
-          console.log('Pas de token trouve, redirection vers la page de connexion')
+          //console.log('Pas de token trouve, redirection vers la page de connexion')
           window.location.href = '/login'
           return
         }
@@ -188,6 +216,21 @@ const Devices = () => {
     
     initializeAuth()
   }, [])
+
+  // Rafraîchissement automatique toutes les 10 secondes sans recharger le composant
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (!loading && !autoRefreshing) {
+        setAutoRefreshing(true)
+        try {
+          await fetchDevicesNoLog()
+        } finally {
+          setAutoRefreshing(false)
+        }
+      }
+    }, 100000) // 1 minute
+    return () => clearInterval(interval)
+  }, [loading, autoRefreshing])
 
   // Gestion du formulaire
   const handleInputChange = (e) => {
@@ -381,7 +424,7 @@ const Devices = () => {
 
       // 3. Récupération de la topologie
       console.log('[FRONTEND] Récupération de la topologie...')
-      const topologyResponse = await axios.get('/api/network/topology')
+              const topologyResponse = await axios.get('/api/topology/last')
       
       if (topologyResponse.data.success) {
         console.log('[FRONTEND] Topologie récupérée avec succès')
@@ -421,10 +464,10 @@ const Devices = () => {
     await handleScanWithMode('rapide')
     setScanMode(null)
   }
-  // Nouveau handler pour le scan complet
-  const handleScanFull = async () => {
-    setScanMode('complet')
-    await handleScanWithMode('complet')
+  // Handler pour le scan complet (anciennement optimisé)
+  const handleScanOptimized = async () => {
+    setScanMode('optimise')
+    await handleScanWithMode('optimise')
     setScanMode(null)
   }
   // Fonction générique pour lancer le scan avec le mode choisi
@@ -451,13 +494,14 @@ const Devices = () => {
       if (!comprehensiveResponse.data.success) {
         throw new Error(comprehensiveResponse.data.message || 'Erreur lors du scan')
       }
-      // 3. (optionnel) Récupération de la topologie si mode complet
-      if (mode === 'complet') {
-        await axios.get('/api/network/topology')
-      }
-      // 4. Mise à jour de la liste des appareils
+      // 3. Mise à jour de la liste des appareils
       await fetchDevices()
-      setToast({ show: true, message: `✅ Scan ${mode === 'rapide' ? 'rapide' : 'complet'} terminé : ${comprehensiveResponse.data.count || comprehensiveResponse.data.data?.length || 0} appareils détectés !`, color: 'success' })
+      
+      // Message adapté selon le mode
+      let modeLabel = 'rapide'
+      if (mode === 'optimise') modeLabel = 'complet'
+      
+      setToast({ show: true, message: `✅ Scan ${modeLabel} terminé : ${comprehensiveResponse.data.count || comprehensiveResponse.data.data?.length || 0} appareils détectés !`, color: 'success' })
     } catch (err) {
       setError('Erreur lors du scan: ' + (err.response?.data?.message || err.message))
       setToast({ show: true, message: '❌ ' + (err.response?.data?.message || err.message), color: 'danger' })
@@ -503,6 +547,8 @@ const Devices = () => {
   }, [])
 
   const scanButtonDisabled = loading || !!scanProgress
+  // Le bouton Rafraîchir ne doit être désactivé que si loading est vrai (pas autoRefreshing)
+  const refreshButtonDisabled = loading || autoRefreshing
 
   return (
     <>
@@ -540,26 +586,26 @@ const Devices = () => {
             </CCol>
             <CCol xs="auto" className="ms-auto">
               <CButtonGroup role="group" aria-label="Actions scan" className="me-2">
-                <CTooltip content="Scan rapide (pipeline auto, très rapide)">
+                <CTooltip content="Scan rapide (détection uniquement, très rapide)">
                   <CButton
                     color="info"
                     variant="outline"
                     onClick={handleScanFast}
-                    disabled={scanButtonDisabled || scanMode === 'complet'}
+                    disabled={scanButtonDisabled || scanMode === 'optimise'}
                     style={{ minWidth: 120 }}
                   >
                     {scanMode === 'rapide' && loading ? <CSpinner size="sm" className="me-2" /> : <CIcon icon={cilSpeedometer} className="me-2" />}Scan rapide
                   </CButton>
                 </CTooltip>
-                <CTooltip content="Scan complet (pipeline avancée, enrichissement, topologie)">
+                <CTooltip content="Scan complet (enrichissement complet sans statistiques, rapide)">
                   <CButton
                     color="success"
                     variant="outline"
-                    onClick={handleScanFull}
+                    onClick={handleScanOptimized}
                     disabled={scanButtonDisabled || scanMode === 'rapide'}
                     style={{ minWidth: 120 }}
                   >
-                    {scanMode === 'complet' && loading ? <CSpinner size="sm" className="me-2" /> : <CIcon icon={cilSearch} className="me-2" />}Scan complet
+                    {scanMode === 'optimise' && loading ? <CSpinner size="sm" className="me-2" /> : <CIcon icon={cilSearch} className="me-2" />}Scan complet
                   </CButton>
                 </CTooltip>
                 <CTooltip content="Rafraichir la liste des appareils">
@@ -567,7 +613,7 @@ const Devices = () => {
                     color="secondary" 
                     variant="outline"
                     onClick={handleRefresh}
-                    disabled={loading}
+                    disabled={refreshButtonDisabled}
                   >
                     {loading ? (
                       <CSpinner size="sm" className="me-2" />

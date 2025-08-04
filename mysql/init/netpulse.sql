@@ -92,7 +92,17 @@ CREATE TABLE `appareils` (
   `lastSeen` datetime DEFAULT NULL,
   `firstDiscovered` datetime DEFAULT CURRENT_TIMESTAMP,
   `createdAt` datetime GENERATED ALWAYS AS (`firstDiscovered`) STORED,
-  `isActive` tinyint(1) DEFAULT '1'
+  `isActive` tinyint(1) DEFAULT '1',
+  `cpuUsage` decimal(5,2) DEFAULT NULL COMMENT 'Utilisation CPU en pourcentage',
+  `memoryUsage` decimal(5,2) DEFAULT NULL COMMENT 'Utilisation mémoire en pourcentage',
+  `bandwidthDownload` decimal(10,2) DEFAULT NULL COMMENT 'Bande passante download en Mbps',
+  `bandwidthUpload` decimal(10,2) DEFAULT NULL COMMENT 'Bande passante upload en Mbps',
+  `status` varchar(50) DEFAULT NULL COMMENT 'Statut de l\'appareil',
+  PRIMARY KEY (`id`),
+  KEY `idx_appareils_cpu_usage` (`cpuUsage`),
+  KEY `idx_appareils_memory_usage` (`memoryUsage`),
+  KEY `idx_appareils_status` (`status`),
+  KEY `idx_appareils_last_seen` (`lastSeen`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -236,20 +246,268 @@ CREATE TABLE `statistiques_reseau` (
   `intervalLabel` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- --------------------------------------------------------
+-- =====================================================
+-- Structure de la table `topologies` (Version 3.0 normalisée)
+-- =====================================================
 
---
--- Structure de la table `topologie_reseau`
---
+CREATE TABLE `topologies` (
+  `id` VARCHAR(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Identifiant unique de la topologie (UUID)',
+  `name` VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Nom descriptif de la topologie',
+  `version` VARCHAR(10) DEFAULT '3.0.0' COMMENT 'Version du format de données',
+  `source` ENUM('manual', 'scan', 'auto', 'scheduled', 'database') DEFAULT 'database' COMMENT 'Source de génération',
+  `status` ENUM('active', 'inactive', 'archived', 'draft') DEFAULT 'active' COMMENT 'Statut de la topologie',
+  `generation_method` VARCHAR(50) DEFAULT 'ultra-optimized' COMMENT 'Méthode de génération utilisée',
+  `device_count` INT DEFAULT 0 COMMENT 'Nombre d\'appareils dans la topologie',
+  `link_count` INT DEFAULT 0 COMMENT 'Nombre de liens dans la topologie',
+  `central_node_id` VARCHAR(36) DEFAULT NULL COMMENT 'ID de l\'équipement central',
+  `central_node_confidence` ENUM('high', 'medium', 'low') DEFAULT 'medium' COMMENT 'Confiance dans l\'équipement central',
+  `generation_time_ms` INT DEFAULT 0 COMMENT 'Temps de génération en millisecondes',
+  `snmp_success_rate` DECIMAL(5,2) DEFAULT 0.00 COMMENT 'Taux de succès SNMP (%)',
+  `cache_hit_rate` DECIMAL(5,2) DEFAULT 0.00 COMMENT 'Taux de hit cache (%)',
+  `metadata` JSON COMMENT 'Métadonnées additionnelles (userId, options, etc.)',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Date de création',
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Date de dernière modification',
+  `created_by` VARCHAR(36) DEFAULT NULL COMMENT 'ID de l\'utilisateur créateur',
+  `expires_at` TIMESTAMP NULL DEFAULT NULL COMMENT 'Date d\'expiration (pour nettoyage automatique)',
+  
+  PRIMARY KEY (`id`),
+  KEY `idx_topology_source` (`source`),
+  KEY `idx_topology_status` (`status`),
+  KEY `idx_topology_created_at` (`created_at`),
+  KEY `idx_topology_central_node` (`central_node_id`),
+  KEY `idx_topology_expires` (`expires_at`),
+  KEY `idx_topology_method` (`generation_method`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Table principale des topologies';
 
-CREATE TABLE `topologie_reseau` (
-  `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `createdAt` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updatedAt` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  `data` json DEFAULT NULL,
-  `isActive` tinyint(1) DEFAULT '1'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- =====================================================
+-- Structure de la table `topology_nodes`
+-- =====================================================
+
+CREATE TABLE `topology_nodes` (
+  `id` VARCHAR(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Identifiant unique du nœud',
+  `topology_id` VARCHAR(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ID de la topologie parente',
+  `device_id` VARCHAR(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ID de l\'appareil correspondant (si existe)',
+  `hostname` VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Nom d\'hôte du nœud',
+  `ip_address` VARCHAR(45) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Adresse IP du nœud',
+  `mac_address` VARCHAR(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Adresse MAC du nœud',
+  `device_type` VARCHAR(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Type d\'appareil (router, switch, server, etc.)',
+  `os` VARCHAR(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Système d\'exploitation',
+  `is_central` BOOLEAN DEFAULT FALSE COMMENT 'Indique si c\'est l\'équipement central',
+  `is_virtual` BOOLEAN DEFAULT FALSE COMMENT 'Indique si c\'est un nœud virtuel (gateway)',
+  `status` ENUM('active', 'inactive', 'warning', 'error') DEFAULT 'active' COMMENT 'Statut du nœud',
+  `cpu_usage` DECIMAL(5,2) DEFAULT 0.00 COMMENT 'Utilisation CPU (%)',
+  `memory_usage` DECIMAL(5,2) DEFAULT 0.00 COMMENT 'Utilisation mémoire (%)',
+  `bandwidth_mbps` DECIMAL(10,2) DEFAULT 0.00 COMMENT 'Bande passante en Mbps',
+  `latency_ms` DECIMAL(8,2) DEFAULT 0.00 COMMENT 'Latence en millisecondes',
+  `uptime_seconds` BIGINT DEFAULT 0 COMMENT 'Temps de fonctionnement en secondes',
+  `vlan` VARCHAR(50) COLLATE utf8mb4_unicode_ci DEFAULT 'N/A' COMMENT 'VLAN associé',
+  `services` JSON COMMENT 'Liste des services actifs',
+  `last_seen` TIMESTAMP NULL DEFAULT NULL COMMENT 'Dernière fois vu',
+  `first_discovered` TIMESTAMP NULL DEFAULT NULL COMMENT 'Première découverte',
+  `node_metadata` JSON COMMENT 'Métadonnées spécifiques au nœud',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Date de création',
+  
+  PRIMARY KEY (`id`),
+  KEY `idx_node_topology` (`topology_id`),
+  KEY `idx_node_device` (`device_id`),
+  KEY `idx_node_ip` (`ip_address`),
+  KEY `idx_node_mac` (`mac_address`),
+  KEY `idx_node_type` (`device_type`),
+  KEY `idx_node_central` (`is_central`),
+  KEY `idx_node_status` (`status`),
+  KEY `idx_node_hostname` (`hostname`),
+  KEY `idx_node_last_seen` (`last_seen`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Nœuds des topologies';
+
+-- =====================================================
+-- Structure de la table `topology_links`
+-- =====================================================
+
+CREATE TABLE `topology_links` (
+  `id` VARCHAR(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Identifiant unique du lien',
+  `topology_id` VARCHAR(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ID de la topologie parente',
+  `source_node_id` VARCHAR(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ID du nœud source',
+  `target_node_id` VARCHAR(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ID du nœud cible',
+  `link_type` ENUM('LAN', 'WAN', 'WIFI', 'VLAN', 'BACKUP') DEFAULT 'LAN' COMMENT 'Type de lien',
+  `confidence` ENUM('high', 'medium', 'low') DEFAULT 'medium' COMMENT 'Niveau de confiance du lien',
+  `is_virtual` BOOLEAN DEFAULT FALSE COMMENT 'Indique si c\'est un lien virtuel',
+  `is_assumed` BOOLEAN DEFAULT FALSE COMMENT 'Indique si le lien est supposé (fallback)',
+  `source_port` INT DEFAULT NULL COMMENT 'Port source (pour SNMP)',
+  `target_port` INT DEFAULT NULL COMMENT 'Port cible (pour SNMP)',
+  `bandwidth_mbps` DECIMAL(10,2) DEFAULT 0.00 COMMENT 'Bande passante en Mbps',
+  `latency_ms` DECIMAL(8,2) DEFAULT 0.00 COMMENT 'Latence en millisecondes',
+  `packet_loss` DECIMAL(5,2) DEFAULT 0.00 COMMENT 'Perte de paquets (%)',
+  `vlan_id` VARCHAR(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ID du VLAN',
+  `reasoning` TEXT COLLATE utf8mb4_unicode_ci COMMENT 'Raison de la création du lien',
+  `link_metadata` JSON COMMENT 'Métadonnées spécifiques au lien',
+  `last_updated` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Dernière mise à jour',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Date de création',
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_link_direction` (`topology_id`, `source_node_id`, `target_node_id`),
+  KEY `idx_link_topology` (`topology_id`),
+  KEY `idx_link_source` (`source_node_id`),
+  KEY `idx_link_target` (`target_node_id`),
+  KEY `idx_link_type` (`link_type`),
+  KEY `idx_link_confidence` (`confidence`),
+  KEY `idx_link_virtual` (`is_virtual`),
+  KEY `idx_link_bandwidth` (`bandwidth_mbps`),
+  KEY `idx_link_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Liens des topologies';
+
+-- =====================================================
+-- Structure de la table `topology_stats`
+-- =====================================================
+
+CREATE TABLE `topology_stats` (
+  `id` VARCHAR(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Identifiant unique des statistiques',
+  `topology_id` VARCHAR(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ID de la topologie',
+  `stat_type` ENUM('overall', 'by_device_type', 'by_link_type', 'by_subnet', 'performance') NOT NULL COMMENT 'Type de statistique',
+  `stat_key` VARCHAR(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Clé de la statistique',
+  `stat_value` DECIMAL(15,4) DEFAULT 0.0000 COMMENT 'Valeur de la statistique',
+  `stat_unit` VARCHAR(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Unité de mesure',
+  `stat_description` TEXT COLLATE utf8mb4_unicode_ci COMMENT 'Description de la statistique',
+  `calculated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Date de calcul',
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_stat_unique` (`topology_id`, `stat_type`, `stat_key`),
+  KEY `idx_stat_topology` (`topology_id`),
+  KEY `idx_stat_type` (`stat_type`),
+  KEY `idx_stat_key` (`stat_key`),
+  KEY `idx_stat_calculated` (`calculated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Statistiques des topologies';
+
+-- =====================================================
+-- Structure de la table `topology_changes`
+-- =====================================================
+
+CREATE TABLE `topology_changes` (
+  `id` VARCHAR(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Identifiant unique du changement',
+  `topology_id` VARCHAR(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ID de la topologie',
+  `change_type` ENUM('created', 'updated', 'node_added', 'node_removed', 'link_added', 'link_removed', 'central_changed', 'archived') NOT NULL COMMENT 'Type de changement',
+  `entity_type` ENUM('topology', 'node', 'link') DEFAULT NULL COMMENT 'Type d\'entité modifiée',
+  `entity_id` VARCHAR(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ID de l\'entité modifiée',
+  `old_value` JSON DEFAULT NULL COMMENT 'Ancienne valeur',
+  `new_value` JSON DEFAULT NULL COMMENT 'Nouvelle valeur',
+  `change_reason` TEXT COLLATE utf8mb4_unicode_ci COMMENT 'Raison du changement',
+  `changed_by` VARCHAR(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ID de l\'utilisateur ayant effectué le changement',
+  `changed_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Date du changement',
+  
+  PRIMARY KEY (`id`),
+  KEY `idx_change_topology` (`topology_id`),
+  KEY `idx_change_type` (`change_type`),
+  KEY `idx_change_entity` (`entity_type`, `entity_id`),
+  KEY `idx_change_date` (`changed_at`),
+  KEY `idx_change_user` (`changed_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Historique des changements de topologie';
+
+-- =====================================================
+-- VUES POUR FACILITER LES REQUÊTES
+-- =====================================================
+
+-- Vue pour les topologies avec statistiques
+CREATE VIEW `v_topologies_with_stats` AS
+SELECT 
+  t.*,
+  COUNT(DISTINCT tn.id) as actual_node_count,
+  COUNT(DISTINCT tl.id) as actual_link_count,
+  AVG(tn.cpu_usage) as avg_cpu_usage,
+  AVG(tn.memory_usage) as avg_memory_usage,
+  AVG(tl.bandwidth_mbps) as avg_bandwidth,
+  AVG(tl.latency_ms) as avg_latency
+FROM topologies t
+LEFT JOIN topology_nodes tn ON t.id = tn.topology_id
+LEFT JOIN topology_links tl ON t.id = tl.topology_id
+GROUP BY t.id;
+
+-- Vue pour les nœuds avec informations de connectivité
+CREATE VIEW `v_nodes_with_connectivity` AS
+SELECT 
+  tn.*,
+  t.name as topology_name,
+  t.status as topology_status,
+  COUNT(tl_out.id) as outgoing_links,
+  COUNT(tl_in.id) as incoming_links,
+  (COUNT(tl_out.id) + COUNT(tl_in.id)) as total_connections
+FROM topology_nodes tn
+JOIN topologies t ON tn.topology_id = t.id
+LEFT JOIN topology_links tl_out ON tn.id = tl_out.source_node_id
+LEFT JOIN topology_links tl_in ON tn.id = tl_in.target_node_id
+GROUP BY tn.id;
+
+-- =====================================================
+-- PROCÉDURES STOCKÉES POUR LA GESTION DES TOPOLOGIES
+-- =====================================================
+
+-- Note: Les triggers ont été supprimés pour éviter les erreurs de privilèges
+-- Utilisez ces procédures stockées pour gérer l'état des topologies manuellement
+-- Instructions d'utilisation :
+-- 1. CALL sp_activate_topology('topology_id'); - Pour activer une topologie
+-- 2. CALL sp_update_topology_counters('topology_id'); - Pour mettre à jour les compteurs
+-- 3. CALL sp_create_topology('id', 'name', 'source', 'user_id'); - Pour créer une topologie
+
+-- =====================================================
+-- PROCÉDURES STOCKÉES ALTERNATIVES (plus compatibles)
+-- =====================================================
+-- Ces procédures peuvent être utilisées si les triggers échouent
+
+DELIMITER $$
+
+-- Procédure pour activer une topologie (remplace les triggers)
+CREATE PROCEDURE `sp_activate_topology`(IN topology_id VARCHAR(36))
+BEGIN
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK;
+    RESIGNAL;
+  END;
+  
+  START TRANSACTION;
+    -- Désactiver toutes les autres topologies
+    UPDATE topologies SET status = 'inactive' WHERE status = 'active';
+    -- Activer la topologie spécifiée
+    UPDATE topologies SET status = 'active' WHERE id = topology_id;
+  COMMIT;
+END$$
+
+-- Procédure pour mettre à jour les compteurs
+CREATE PROCEDURE `sp_update_topology_counters`(IN topology_id VARCHAR(36))
+BEGIN
+  UPDATE topologies 
+  SET 
+    device_count = (SELECT COUNT(*) FROM topology_nodes WHERE topology_id = topology_id),
+    link_count = (SELECT COUNT(*) FROM topology_links WHERE topology_id = topology_id)
+  WHERE id = topology_id;
+END$$
+
+-- Procédure pour créer une nouvelle topologie avec gestion d'état
+CREATE PROCEDURE `sp_create_topology`(
+  IN p_id VARCHAR(36),
+  IN p_name VARCHAR(255),
+  IN p_source ENUM('manual', 'scan', 'auto', 'scheduled', 'database'),
+  IN p_created_by VARCHAR(36)
+)
+BEGIN
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK;
+    RESIGNAL;
+  END;
+  
+  START TRANSACTION;
+    -- Désactiver toutes les autres topologies si la nouvelle est active
+    IF p_source = 'manual' THEN
+      UPDATE topologies SET status = 'inactive' WHERE status = 'active';
+    END IF;
+    
+    -- Insérer la nouvelle topologie
+    INSERT INTO topologies (id, name, source, created_by, status)
+    VALUES (p_id, p_name, p_source, p_created_by, 
+            CASE WHEN p_source = 'manual' THEN 'active' ELSE 'inactive' END);
+  COMMIT;
+END$$
+
+DELIMITER ;
 
 -- --------------------------------------------------------
 
@@ -316,7 +574,6 @@ ALTER TABLE `anomalies`
 -- Index pour la table `appareils`
 --
 ALTER TABLE `appareils`
-  ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `unique_ip_hostname` (`ipAddress`,`hostname`),
   ADD KEY `idx_hostname` (`hostname`),
   ADD KEY `idx_ip_address` (`ipAddress`),
@@ -410,14 +667,9 @@ ALTER TABLE `statistiques_reseau`
   ADD KEY `idx_interval_label` (`intervalLabel`),
   ADD KEY `idx_device_timestamp` (`deviceId`,`timestamp`);
 
---
--- Index pour la table `topologie_reseau`
---
-ALTER TABLE `topologie_reseau`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_name` (`name`),
-  ADD KEY `idx_active` (`isActive`),
-  ADD KEY `idx_created_at` (`createdAt`);
+
+
+
 
 --
 -- Index pour la table `utilisateur`
@@ -492,6 +744,29 @@ ALTER TABLE `retours`
 --
 ALTER TABLE `statistiques_reseau`
   ADD CONSTRAINT `fk_stats_device` FOREIGN KEY (`deviceId`) REFERENCES `appareils` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Contraintes pour les tables de topologie
+--
+
+-- Contraintes pour la table `topology_nodes`
+ALTER TABLE `topology_nodes`
+  ADD CONSTRAINT `fk_node_topology` FOREIGN KEY (`topology_id`) REFERENCES `topologies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_node_device` FOREIGN KEY (`device_id`) REFERENCES `appareils` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Contraintes pour la table `topology_links`
+ALTER TABLE `topology_links`
+  ADD CONSTRAINT `fk_link_topology` FOREIGN KEY (`topology_id`) REFERENCES `topologies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_link_source` FOREIGN KEY (`source_node_id`) REFERENCES `topology_nodes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_link_target` FOREIGN KEY (`target_node_id`) REFERENCES `topology_nodes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Contraintes pour la table `topology_stats`
+ALTER TABLE `topology_stats`
+  ADD CONSTRAINT `fk_stat_topology` FOREIGN KEY (`topology_id`) REFERENCES `topologies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Contraintes pour la table `topology_changes`
+ALTER TABLE `topology_changes`
+  ADD CONSTRAINT `fk_change_topology` FOREIGN KEY (`topology_id`) REFERENCES `topologies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

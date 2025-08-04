@@ -26,8 +26,8 @@ import {
   CForm,
   CFormLabel,
   CFormTextarea,
-  CFormCheck,
-  CFormRange,
+  CSpinner,
+  CAlert,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
@@ -38,62 +38,80 @@ import {
   cilSettings,
   cilTrash,
   cilPlus,
+  cilInfo,
 } from '@coreui/icons'
-import axios from 'axios'
-import authService from '../../services/auth.service'
-import { API_CONFIG, buildApiUrl } from '../../config/api.config'
+import apiService from '../../services/api.service'
 
 const Alerts = () => {
-  const [selectedType, setSelectedType] = useState('all')
+  const [selectedStatus, setSelectedStatus] = useState('all')
+  const [selectedPriority, setSelectedPriority] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedAlert, setSelectedAlert] = useState(null)
   const [modalVisible, setModalVisible] = useState(false)
   const [settingsModalVisible, setSettingsModalVisible] = useState(false)
   const [alerts, setAlerts] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
 
-  // Charger les alertes depuis l'API
-  const fetchAlerts = async () => {
-    setLoading(true)
+  // Fonction pour charger les alertes depuis l'API
+  const loadAlerts = async (showRefreshing = false) => {
     try {
-      const token = authService.getToken()
-      authService.setAuthHeader(token)
-      const response = await axios.get(buildApiUrl('/api/network/alerts'), {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      setAlerts(response.data.results || [])
+      if (showRefreshing) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
       setError(null)
+
+      const response = await apiService.get('/api/network/alerts?pageSize=500')
+      
+      if (response.results) {
+        setAlerts(response.results)
+      } else if (response.error) {
+        // Si c'est une erreur gérée côté serveur, afficher le message
+        setAlerts([])
+        setError(response.error)
+      } else {
+        throw new Error('Format de réponse invalide')
+      }
     } catch (err) {
-      setError('Erreur lors du chargement des alertes: ' + (err.response?.data?.message || err.message))
+      console.error('Erreur chargement alertes:', err)
+      setError('Erreur lors du chargement des alertes: ' + err.message)
+      setAlerts([])
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
+  // Charger les alertes au montage du composant
   useEffect(() => {
-    fetchAlerts()
+    loadAlerts()
   }, [])
 
   // Fonction pour filtrer les alertes
   const filteredAlerts = alerts.filter((alert) => {
-    const matchesType = selectedType === 'all' || alert.anomalyType === selectedType || alert.type === selectedType
-    const matchesSearch = Object.values(alert).some((value) =>
-      value && value.toString().toLowerCase().includes(searchTerm.toLowerCase()),
-    )
-    return matchesType && matchesSearch
+    const matchesStatus = selectedStatus === 'all' || alert.status === selectedStatus
+    const matchesPriority = selectedPriority === 'all' || alert.priority === selectedPriority
+    const matchesSearch = 
+      alert.anomalyType?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      alert.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      alert.hostname?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      alert.ipAddress?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      alert.severity?.toLowerCase().includes(searchTerm.toLowerCase())
+    return matchesStatus && matchesPriority && matchesSearch
   })
 
-  // Fonction pour obtenir la couleur du badge selon le type
-  const getTypeColor = (type) => {
-    switch (type) {
-      case 'CPU_HIGH':
-      case 'MEMORY_HIGH':
-        return 'warning'
-      case 'LATENCY_HIGH':
-        return 'info'
-      case 'SECURITY':
+  // Fonction pour obtenir la couleur du badge selon la priorité
+  const getPriorityColor = (priority) => {
+    switch (priority) {
+      case 'high':
         return 'danger'
+      case 'medium':
+        return 'warning'
+      case 'low':
+        return 'info'
       default:
         return 'secondary'
     }
@@ -102,13 +120,44 @@ const Alerts = () => {
   // Fonction pour obtenir la couleur du badge selon le statut
   const getStatusColor = (status) => {
     switch (status) {
-      case 'active':
+      case 'open':
+        return 'danger'
+      case 'resolved':
         return 'success'
-      case 'inactive':
+      case 'acknowledged':
+        return 'warning'
+      default:
+        return 'secondary'
+    }
+  }
+
+  // Fonction pour obtenir la couleur du badge selon la sévérité
+  const getSeverityColor = (severity) => {
+    switch (severity) {
+      case 'critical':
+        return 'danger'
+      case 'high':
+        return 'warning'
+      case 'medium':
+        return 'info'
+      case 'low':
         return 'secondary'
       default:
         return 'secondary'
     }
+  }
+
+  // Fonction pour formater la date
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A'
+    const date = new Date(dateString)
+    return date.toLocaleString('fr-FR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
   }
 
   const handleAlertClick = (alert) => {
@@ -116,40 +165,29 @@ const Alerts = () => {
     setModalVisible(true)
   }
 
+  const handleRefresh = () => {
+    loadAlerts(true)
+  }
+
   // Fonction pour acquitter une alerte
   const handleAcknowledge = async (alertId) => {
     try {
-      const token = authService.getToken()
-      authService.setAuthHeader(token)
-      await axios.post(buildApiUrl(`/api/network/alerts/${alertId}/ack`), {}, { headers: { Authorization: `Bearer ${token}` } })
-      fetchAlerts()
+      await apiService.post(`/api/network/alerts/${alertId}/ack`, {})
+      loadAlerts(true)
     } catch (err) {
-      alert('Erreur lors de l\'acquittement : ' + (err.response?.data?.message || err.message))
+      console.error('Erreur acquittement alerte:', err)
+      setError('Erreur lors de l\'acquittement: ' + err.message)
     }
   }
 
-  // Fonction pour assigner une alerte
-  const handleAssign = async (alertId, userId) => {
-    try {
-      const token = authService.getToken()
-      authService.setAuthHeader(token)
-      await axios.post(buildApiUrl(`/api/network/alerts/${alertId}/assign`), { userId }, { headers: { Authorization: `Bearer ${token}` } })
-      fetchAlerts()
-    } catch (err) {
-      alert('Erreur lors de l\'assignation : ' + (err.response?.data?.message || err.message))
-    }
-  }
-
-  // Fonction pour commenter une alerte
-  const handleComment = async (alertId, message) => {
-    try {
-      const token = authService.getToken()
-      authService.setAuthHeader(token)
-      await axios.post(buildApiUrl(`/api/network/alerts/${alertId}/comment`), { message }, { headers: { Authorization: `Bearer ${token}` } })
-      fetchAlerts()
-    } catch (err) {
-      alert('Erreur lors de l\'ajout du commentaire : ' + (err.response?.data?.message || err.message))
-    }
+  if (loading) {
+    return (
+      <CCard className="mb-4">
+        <CCardBody className="d-flex justify-content-center align-items-center" style={{ minHeight: '200px' }}>
+          <CSpinner size="lg" />
+        </CCardBody>
+      </CCard>
+    )
   }
 
   return (
@@ -158,37 +196,58 @@ const Alerts = () => {
         <CCardHeader>
           <CRow className="align-items-center">
             <CCol xs="auto">
-              <h4 className="mb-0">Alertes Reseau</h4>
+              <h4 className="mb-0">Alertes Réseau</h4>
             </CCol>
             <CCol xs="auto" className="ms-auto">
-              <CButtonGroup>
-                <CButton color="primary" variant="outline" className="me-2">
-                  <CIcon icon={cilPlus} className="me-2" />
-                  Nouvelle Alerte
-                </CButton>
-                <CButton color="primary" variant="outline" onClick={() => setSettingsModalVisible(true)}>
-                  <CIcon icon={cilSettings} className="me-2" />
-                  Parametres
-                </CButton>
-              </CButtonGroup>
+              <CButton 
+                color="primary" 
+                variant="outline" 
+                onClick={handleRefresh}
+                disabled={refreshing}
+              >
+                {refreshing ? (
+                  <CSpinner size="sm" className="me-2" />
+                ) : (
+                  <CIcon icon={cilReload} className="me-2" />
+                )}
+                Actualiser
+              </CButton>
             </CCol>
           </CRow>
         </CCardHeader>
         <CCardBody>
+          {error && (
+            <CAlert color="danger" className="mb-3">
+              {error}
+            </CAlert>
+          )}
+
           <CRow className="mb-3">
-            <CCol md={4}>
+            <CCol md={3}>
               <CFormSelect
-                value={selectedType}
-                onChange={(e) => setSelectedType(e.target.value)}
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
                 options={[
-                  { label: 'Tous les types', value: 'all' },
-                  { label: 'Performance', value: 'performance' },
-                  { label: 'Systeme', value: 'system' },
-                  { label: 'Securite', value: 'security' },
+                  { label: 'Tous les statuts', value: 'all' },
+                  { label: 'Ouvertes', value: 'open' },
+                  { label: 'Résolues', value: 'resolved' },
+                  { label: 'Acquittées', value: 'acknowledged' },
                 ]}
               />
             </CCol>
-            <CCol md={8}>
+            <CCol md={3}>
+              <CFormSelect
+                value={selectedPriority}
+                onChange={(e) => setSelectedPriority(e.target.value)}
+                options={[
+                  { label: 'Toutes les priorités', value: 'all' },
+                  { label: 'Haute', value: 'high' },
+                  { label: 'Moyenne', value: 'medium' },
+                  { label: 'Basse', value: 'low' },
+                ]}
+              />
+            </CCol>
+            <CCol md={6}>
               <CInputGroup>
                 <CInputGroupText>
                   <CIcon icon={cilFilter} />
@@ -205,73 +264,107 @@ const Alerts = () => {
           <CTable hover responsive>
             <CTableHead>
               <CTableRow>
-                <CTableHeaderCell>Nom</CTableHeaderCell>
-                <CTableHeaderCell>Type</CTableHeaderCell>
-                <CTableHeaderCell>Condition</CTableHeaderCell>
+                <CTableHeaderCell>Type d'Anomalie</CTableHeaderCell>
+                <CTableHeaderCell>Appareil</CTableHeaderCell>
+                <CTableHeaderCell>Sévérité</CTableHeaderCell>
+                <CTableHeaderCell>Priorité</CTableHeaderCell>
                 <CTableHeaderCell>Statut</CTableHeaderCell>
-                <CTableHeaderCell>Derniere Activation</CTableHeaderCell>
+                <CTableHeaderCell>Déclenchée le</CTableHeaderCell>
                 <CTableHeaderCell>Description</CTableHeaderCell>
                 <CTableHeaderCell>Actions</CTableHeaderCell>
               </CTableRow>
             </CTableHead>
             <CTableBody>
-              {loading ? (
-                <CTableRow><CTableDataCell colSpan={7}>Chargement...</CTableDataCell></CTableRow>
-              ) : error ? (
-                <CTableRow><CTableDataCell colSpan={7}>{error}</CTableDataCell></CTableRow>
-              ) : filteredAlerts.map((alert) => (
-                <CTableRow
-                  key={alert.alertId}
-                  className="cursor-pointer"
-                  onClick={() => handleAlertClick(alert)}
-                >
-                  <CTableDataCell>
-                    <CIcon icon={cilBell} className="me-2" />
-                    {alert.anomalyType || alert.type || alert.name}
-                  </CTableDataCell>
-                  <CTableDataCell>
-                    <CBadge color={getTypeColor(alert.anomalyType || alert.type)}>
-                      {alert.anomalyType || alert.type}
-                    </CBadge>
-                  </CTableDataCell>
-                  <CTableDataCell>{alert.description || alert.condition}</CTableDataCell>
-                  <CTableDataCell>
-                    <CBadge color={getStatusColor(alert.status)}>
-                      {alert.status === 'active' ? 'Active' : 'Inactive'}
-                    </CBadge>
-                  </CTableDataCell>
-                  <CTableDataCell>{alert.triggeredAt ? new Date(alert.triggeredAt).toLocaleString() : ''}</CTableDataCell>
-                  <CTableDataCell>{alert.hostname || alert.deviceId || ''}</CTableDataCell>
-                  <CTableDataCell>
-                    <CButtonGroup>
-                      <CButton
-                        color={alert.status === 'active' ? 'secondary' : 'success'}
-                        variant="ghost"
-                        size="sm"
-                        className="me-2"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // Logique pour activer/desactiver
-                        }}
-                      >
-                        <CIcon icon={alert.status === 'active' ? cilCheckCircle : cilBell} />
-                      </CButton>
-                      <CButton
-                        color="danger"
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // Logique pour supprimer
-                        }}
-                      >
-                        <CIcon icon={cilTrash} />
-                      </CButton>
-                      <CButton color="success" size="sm" onClick={e => { e.stopPropagation(); handleAcknowledge(alert.alertId) }}>Acquitter</CButton>
-                    </CButtonGroup>
+              {filteredAlerts.length === 0 ? (
+                <CTableRow>
+                  <CTableDataCell colSpan={8} className="text-center">
+                    {alerts.length === 0 ? 'Aucune alerte trouvée' : 'Aucune alerte ne correspond aux critères de recherche'}
                   </CTableDataCell>
                 </CTableRow>
-              ))}
+              ) : (
+                filteredAlerts.map((alert) => (
+                  <CTableRow
+                    key={alert.alertId}
+                    className="cursor-pointer"
+                    onClick={() => handleAlertClick(alert)}
+                  >
+                    <CTableDataCell>
+                      <CIcon icon={cilBell} className="me-2" />
+                      {alert.anomalyType || 'N/A'}
+                    </CTableDataCell>
+                    <CTableDataCell>
+                      <div>
+                        <div className="fw-semibold">{alert.hostname || 'N/A'}</div>
+                        <small className="text-muted">{alert.ipAddress || 'N/A'}</small>
+                      </div>
+                    </CTableDataCell>
+                    <CTableDataCell>
+                      <CBadge color={getSeverityColor(alert.severity)}>
+                        {alert.severity || 'N/A'}
+                      </CBadge>
+                    </CTableDataCell>
+                    <CTableDataCell>
+                      <CBadge color={getPriorityColor(alert.priority)}>
+                        {alert.priority || 'N/A'}
+                      </CBadge>
+                    </CTableDataCell>
+                    <CTableDataCell>
+                      <CBadge color={getStatusColor(alert.status)}>
+                        {alert.status === 'open' ? 'Ouverte' : 
+                         alert.status === 'resolved' ? 'Résolue' : 
+                         alert.status === 'acknowledged' ? 'Acquittée' : alert.status}
+                      </CBadge>
+                    </CTableDataCell>
+                    <CTableDataCell>{formatDate(alert.triggeredAt)}</CTableDataCell>
+                    <CTableDataCell>
+                      <div className="text-truncate" style={{ maxWidth: '200px' }}>
+                        {alert.description || 'N/A'}
+                      </div>
+                    </CTableDataCell>
+                    <CTableDataCell>
+                      <CButtonGroup>
+                        <CButton
+                          color="info"
+                          variant="ghost"
+                          size="sm"
+                          className="me-2"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleAlertClick(alert)
+                          }}
+                        >
+                          <CIcon icon={cilInfo} />
+                        </CButton>
+                        {alert.status === 'open' && (
+                          <CButton
+                            color="success"
+                            variant="ghost"
+                            size="sm"
+                            className="me-2"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleAcknowledge(alert.alertId)
+                            }}
+                          >
+                            <CIcon icon={cilCheckCircle} />
+                          </CButton>
+                        )}
+                        <CButton
+                          color="danger"
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // TODO: Implémenter la suppression d'alerte
+                          }}
+                        >
+                          <CIcon icon={cilTrash} />
+                        </CButton>
+                      </CButtonGroup>
+                    </CTableDataCell>
+                  </CTableRow>
+                ))
+              )}
             </CTableBody>
           </CTable>
         </CCardBody>
@@ -282,7 +375,7 @@ const Alerts = () => {
         <CModalHeader>
           <CModalTitle>
             <CIcon icon={cilBell} className="me-2" />
-            Details de l'Alerte
+            Détails de l'Alerte
           </CModalTitle>
         </CModalHeader>
         <CModalBody>
@@ -291,85 +384,74 @@ const Alerts = () => {
               <CRow>
                 <CCol md={6}>
                   <div className="mb-3">
-                    <CFormLabel>Nom de l'alerte</CFormLabel>
-                    <div className="form-control-plaintext">{selectedAlert.name}</div>
+                    <CFormLabel>Type d'anomalie</CFormLabel>
+                    <div className="form-control-plaintext">{selectedAlert.anomalyType || 'N/A'}</div>
                   </div>
                 </CCol>
                 <CCol md={6}>
                   <div className="mb-3">
-                    <CFormLabel>Type</CFormLabel>
+                    <CFormLabel>Appareil</CFormLabel>
+                    <div className="form-control-plaintext">
+                      {selectedAlert.hostname || 'N/A'} ({selectedAlert.ipAddress || 'N/A'})
+                    </div>
+                  </div>
+                </CCol>
+              </CRow>
+              <CRow>
+                <CCol md={4}>
+                  <div className="mb-3">
+                    <CFormLabel>Sévérité</CFormLabel>
                     <div>
-                      <CBadge color={getTypeColor(selectedAlert.type)}>
-                        {selectedAlert.type === 'performance'
-                          ? 'Performance'
-                          : selectedAlert.type === 'system'
-                          ? 'Systeme'
-                          : 'Securite'}
+                      <CBadge color={getSeverityColor(selectedAlert.severity)}>
+                        {selectedAlert.severity || 'N/A'}
+                      </CBadge>
+                    </div>
+                  </div>
+                </CCol>
+                <CCol md={4}>
+                  <div className="mb-3">
+                    <CFormLabel>Priorité</CFormLabel>
+                    <div>
+                      <CBadge color={getPriorityColor(selectedAlert.priority)}>
+                        {selectedAlert.priority || 'N/A'}
+                      </CBadge>
+                    </div>
+                  </div>
+                </CCol>
+                <CCol md={4}>
+                  <div className="mb-3">
+                    <CFormLabel>Statut</CFormLabel>
+                    <div>
+                      <CBadge color={getStatusColor(selectedAlert.status)}>
+                        {selectedAlert.status === 'open' ? 'Ouverte' : 
+                         selectedAlert.status === 'resolved' ? 'Résolue' : 
+                         selectedAlert.status === 'acknowledged' ? 'Acquittée' : selectedAlert.status}
                       </CBadge>
                     </div>
                   </div>
                 </CCol>
               </CRow>
-              <div className="mb-3">
-                <CFormLabel>Condition</CFormLabel>
-                <div className="form-control-plaintext">{selectedAlert.condition}</div>
-              </div>
+              <CRow>
+                <CCol md={6}>
+                  <div className="mb-3">
+                    <CFormLabel>Déclenchée le</CFormLabel>
+                    <div className="form-control-plaintext">{formatDate(selectedAlert.triggeredAt)}</div>
+                  </div>
+                </CCol>
+                <CCol md={6}>
+                  <div className="mb-3">
+                    <CFormLabel>Résolue le</CFormLabel>
+                    <div className="form-control-plaintext">{formatDate(selectedAlert.resolvedAt) || 'Non résolue'}</div>
+                  </div>
+                </CCol>
+              </CRow>
               <div className="mb-3">
                 <CFormLabel>Description</CFormLabel>
-                <div className="form-control-plaintext">{selectedAlert.description}</div>
+                <div className="form-control-plaintext">{selectedAlert.description || 'N/A'}</div>
               </div>
               <div className="mb-3">
-                <CFormLabel>Seuil ({selectedAlert.threshold})</CFormLabel>
-                <CFormRange
-                  min="0"
-                  max="100"
-                  value={selectedAlert.threshold}
-                  onChange={(e) => {
-                    // Logique pour mettre a jour le seuil
-                  }}
-                />
-              </div>
-              <div className="mb-3">
-                <CFormLabel>Duree (minutes)</CFormLabel>
-                <CFormInput
-                  type="number"
-                  value={selectedAlert.duration}
-                  onChange={(e) => {
-                    // Logique pour mettre a jour la duree
-                  }}
-                />
-              </div>
-              <div className="mb-3">
-                <CFormLabel>Notifications</CFormLabel>
-                <div>
-                  <CFormCheck
-                    type="checkbox"
-                    id="email"
-                    label="Email"
-                    checked={selectedAlert.notification.includes('email')}
-                    onChange={(e) => {
-                      // Logique pour mettre a jour les notifications
-                    }}
-                  />
-                  <CFormCheck
-                    type="checkbox"
-                    id="sms"
-                    label="SMS"
-                    checked={selectedAlert.notification.includes('sms')}
-                    onChange={(e) => {
-                      // Logique pour mettre a jour les notifications
-                    }}
-                  />
-                  <CFormCheck
-                    type="checkbox"
-                    id="webhook"
-                    label="Webhook"
-                    checked={selectedAlert.notification.includes('webhook')}
-                    onChange={(e) => {
-                      // Logique pour mettre a jour les notifications
-                    }}
-                  />
-                </div>
+                <CFormLabel>Commentaires</CFormLabel>
+                <CFormTextarea rows={3} placeholder="Ajouter un commentaire..." />
               </div>
             </CForm>
           )}
@@ -378,9 +460,19 @@ const Alerts = () => {
           <CButton color="secondary" onClick={() => setModalVisible(false)}>
             Fermer
           </CButton>
-          <CButton color="primary" className="me-2">
-            Enregistrer
-          </CButton>
+          {selectedAlert?.status === 'open' && (
+            <CButton 
+              color="success" 
+              className="me-2"
+              onClick={() => {
+                handleAcknowledge(selectedAlert.alertId)
+                setModalVisible(false)
+              }}
+            >
+              <CIcon icon={cilCheckCircle} className="me-2" />
+              Acquitter
+            </CButton>
+          )}
           <CButton color="danger">
             <CIcon icon={cilTrash} className="me-2" />
             Supprimer
@@ -393,7 +485,7 @@ const Alerts = () => {
         <CModalHeader>
           <CModalTitle>
             <CIcon icon={cilSettings} className="me-2" />
-            Parametres des Alertes
+            Paramètres des Alertes
           </CModalTitle>
         </CModalHeader>
         <CModalBody>
@@ -403,7 +495,7 @@ const Alerts = () => {
               <CFormInput type="email" placeholder="admin@example.com" />
             </div>
             <div className="mb-3">
-              <CFormLabel>Numero de telephone SMS</CFormLabel>
+              <CFormLabel>Numéro de téléphone SMS</CFormLabel>
               <CFormInput type="tel" placeholder="+33 6 12 34 56 78" />
             </div>
             <div className="mb-3">
@@ -411,7 +503,7 @@ const Alerts = () => {
               <CFormInput type="url" placeholder="https://api.example.com/webhook" />
             </div>
             <div className="mb-3">
-              <CFormLabel>Delai entre notifications (minutes)</CFormLabel>
+              <CFormLabel>Délai entre notifications (minutes)</CFormLabel>
               <CFormInput type="number" min="1" value="5" />
             </div>
           </CForm>

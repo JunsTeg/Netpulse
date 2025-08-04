@@ -19,15 +19,21 @@ import {
   CTableRow,
   CAlert,
   CSpinner,
+  CBadge,
+  CCardGroup,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
   cilCloudDownload,
-  cilCloudUpload,
+  cilArrowTop,
   cilChart,
   cilReload,
   cilFilter,
   cilSpeedometer,
+  cilWarning,
+  cilCheckCircle,
+  cilXCircle,
+  cilDevices,
 } from '@coreui/icons'
 import { API_CONFIG, buildApiUrl } from '../../config/api.config'
 
@@ -37,17 +43,36 @@ axios.defaults.baseURL = API_CONFIG.BASE_URL
 const NetworkStats = () => {
   const [timeRange, setTimeRange] = useState('24h')
   const [loading, setLoading] = useState(false)
+  const [collecting, setCollecting] = useState(false)
   const [error, setError] = useState(null)
-  const [stats, setStats] = useState({
-    bandwidth: {
-      download: 0,
-      upload: 0,
-      latency: 0,
-      packetLoss: 0
-    },
-    traffic: [],
-    devices: []
-  })
+  const [globalStats, setGlobalStats] = useState(null)
+  const [recentStats, setRecentStats] = useState([])
+  const [anomalies, setAnomalies] = useState([])
+
+  // Fonction pour déclencher une nouvelle collecte de statistiques
+  const triggerCollection = async () => {
+    try {
+      setCollecting(true)
+      setError(null)
+      
+      console.log('[MVP-STATS] Déclenchement d\'une nouvelle collecte...')
+      
+      const response = await axios.post('/api/mvp-stats/collect')
+      
+      if (response.data && response.data.success) {
+        console.log('[MVP-STATS] Collecte réussie:', response.data)
+        // Recharger les statistiques après la collecte
+        await fetchStats()
+      } else {
+        throw new Error(response.data?.message || 'Échec de la collecte')
+      }
+    } catch (err) {
+      console.error('[MVP-STATS] Erreur lors de la collecte:', err)
+      setError('Erreur lors de la collecte: ' + (err.response?.data?.message || err.message))
+    } finally {
+      setCollecting(false)
+    }
+  }
 
   // Fonction pour charger les statistiques
   const fetchStats = async () => {
@@ -66,73 +91,63 @@ const NetworkStats = () => {
       // Configuration du header d'authentification
       authService.setAuthHeader(token)
 
-      console.log('[NETWORK-STATS] Chargement des statistiques...')
+      console.log('[MVP-STATS] Chargement des statistiques...')
       
-      // Récupération des statistiques avec l'URL correctement construite
-      const response = await axios.get('/api/network/dashboard/summary')
-      console.log('[NETWORK-STATS] Statistiques récupérées:', response.data)
+      // Récupération des statistiques récentes
+      const [recentResponse, anomaliesResponse, dashboardResponse] = await Promise.all([
+        axios.get('/api/mvp-stats/recent?limit=5'),
+        axios.get('/api/mvp-stats/anomalies?limit=10'),
+        axios.get('/api/mvp-stats/dashboard')
+      ])
       
-      if (response.data && response.data.success) {
-        const data = response.data.data
+      console.log('[MVP-STATS] Données récupérées:', {
+        recent: recentResponse.data,
+        anomalies: anomaliesResponse.data,
+        dashboard: dashboardResponse.data
+      })
+      
+      // Traitement des statistiques récentes
+      if (recentResponse.data && recentResponse.data.success) {
+        setRecentStats(recentResponse.data.data || [])
         
-        // Récupération des appareils pour les statistiques détaillées
-        let devicesStats = []
-        try {
-          const devicesResponse = await axios.get('/api/network/devices')
-          if (devicesResponse.data && devicesResponse.data.success && devicesResponse.data.data) {
-            devicesStats = devicesResponse.data.data.map(device => ({
-              hostname: device.hostname || device.ipAddress || 'Appareil inconnu',
-              traffic: Math.random() * 100 * 1024 * 1024, // Trafic simulé
-              connections: Math.floor(Math.random() * 10) + 1, // Connexions simulées
-              status: device.stats?.status || 'inactive'
-            }))
-          }
-        } catch (devicesError) {
-          console.warn('[NETWORK-STATS] Impossible de récupérer les appareils:', devicesError)
-          // Utiliser des données par défaut
-          devicesStats = [
-            {
-              hostname: 'Réseau local',
-              traffic: (data.totalDownload + data.totalUpload) * 1024 * 1024,
-              connections: data.devicesActive || 0,
-              status: 'active'
-            }
-          ]
+        // Prendre les statistiques les plus récentes comme statistiques globales
+        if (recentResponse.data.data && recentResponse.data.data.length > 0) {
+          setGlobalStats(recentResponse.data.data[0])
         }
-        
-        // Transformation des données pour correspondre au format attendu
-        const transformedStats = {
-          bandwidth: {
-            download: data.totalDownload || 0,
-            upload: data.totalUpload || 0,
-            latency: 50, // Valeur par défaut
-            packetLoss: 0.1 // Valeur par défaut
-          },
-          traffic: [
-            // Données de trafic simulées basées sur les statistiques disponibles
-            {
-              protocol: 'HTTP',
-              port: 80,
-              bytes: data.totalDownload * 1024 * 1024, // Conversion en bytes
-              percentage: 60
-            },
-            {
-              protocol: 'HTTPS',
-              port: 443,
-              bytes: data.totalUpload * 1024 * 1024, // Conversion en bytes
-              percentage: 40
-            }
-          ],
-          devices: devicesStats
-        }
-        
-        setStats(transformedStats)
-        console.log('[NETWORK-STATS] Statistiques transformées:', transformedStats)
-      } else {
-        throw new Error('Format de réponse inattendu')
       }
+      
+      // Traitement des anomalies
+      if (anomaliesResponse.data && anomaliesResponse.data.success) {
+        setAnomalies(anomaliesResponse.data.data || [])
+      }
+      
+      // Traitement des données du dashboard
+      if (dashboardResponse.data && dashboardResponse.data.success) {
+        const dashboardData = dashboardResponse.data.data
+        if (dashboardData && !globalStats) {
+          // Utiliser les données du dashboard si pas de stats récentes
+          setGlobalStats({
+            timestamp: new Date(),
+            totalDevices: dashboardData.overview?.totalDevices || 0,
+            activeDevices: dashboardData.overview?.activeDevices || 0,
+            failedDevices: dashboardData.overview?.failedDevices || 0,
+            summary: dashboardData.metrics || {
+              avgCpu: 0,
+              avgMemory: 0,
+              avgBandwidth: 0,
+              avgLatency: 0,
+              totalAnomalies: 0
+            },
+            globalAnomalies: {
+              count: dashboardData.alerts?.totalAnomalies || 0,
+              anomalies: []
+            }
+          })
+        }
+      }
+      
     } catch (err) {
-      console.error('[NETWORK-STATS] Erreur récupération stats:', err)
+      console.error('[MVP-STATS] Erreur récupération stats:', err)
       if (err.response?.status === 401) {
         authService.logout()
         window.location.href = '/login'
@@ -144,7 +159,7 @@ const NetworkStats = () => {
     }
   }
 
-  // Charger les statistiques au montage et lors du changement de periode
+  // Charger les statistiques au montage
   useEffect(() => {
     const initializeAuth = async () => {
       try {
@@ -180,7 +195,7 @@ const NetworkStats = () => {
     }
     
     initializeAuth()
-  }, [timeRange])
+  }, [])
 
   const handleRefresh = () => {
     fetchStats()
@@ -188,21 +203,55 @@ const NetworkStats = () => {
 
   // Fonction pour formater les valeurs de bande passante
   const formatBandwidth = (value) => {
+    if (value === 0 || !value) return '0 Mbps'
     return `${value.toFixed(1)} Mbps`
   }
 
-  // Fonction pour formater le trafic
-  const formatTraffic = (bytes) => {
-    const units = ['B', 'KB', 'MB', 'GB']
-    let value = bytes
-    let unitIndex = 0
-    
-    while (value >= 1024 && unitIndex < units.length - 1) {
-      value /= 1024
-      unitIndex++
+  // Fonction pour formater la mémoire
+  const formatMemory = (value) => {
+    if (value === 0 || !value) return '0 MB'
+    return `${value.toFixed(0)} MB`
+  }
+
+  // Fonction pour formater la latence
+  const formatLatency = (value) => {
+    if (value === 0 || !value) return '0 ms'
+    return `${value.toFixed(0)} ms`
+  }
+
+  // Fonction pour obtenir la couleur selon la valeur
+  const getColorByValue = (value, thresholds) => {
+    if (value >= thresholds.critical) return 'danger'
+    if (value >= thresholds.warning) return 'warning'
+    return 'success'
+  }
+
+  // Fonction pour obtenir le statut d'un appareil
+  const getDeviceStatusBadge = (status) => {
+    switch (status) {
+      case 'success':
+        return <CBadge color="success">Actif</CBadge>
+      case 'partial':
+        return <CBadge color="warning">Partiel</CBadge>
+      case 'failed':
+        return <CBadge color="danger">Échec</CBadge>
+      default:
+        return <CBadge color="secondary">Inconnu</CBadge>
     }
-    
-    return `${value.toFixed(1)} ${units[unitIndex]}`
+  }
+
+  // Fonction pour obtenir la couleur de sévérité d'une anomalie
+  const getAnomalySeverityColor = (severity) => {
+    switch (severity) {
+      case 'critical':
+        return 'danger'
+      case 'warning':
+        return 'warning'
+      case 'info':
+        return 'info'
+      default:
+        return 'secondary'
+    }
   }
 
   return (
@@ -211,7 +260,9 @@ const NetworkStats = () => {
         <CCardHeader>
           <CRow className="align-items-center">
             <CCol xs="auto">
-              <h4 className="mb-0">Statistiques Reseau</h4>
+              <h4 className="mb-0">
+                Statistiques Réseau 
+              </h4>
             </CCol>
             <CCol xs="auto" className="ms-auto">
               <CButtonGroup className="me-2">
@@ -238,10 +289,24 @@ const NetworkStats = () => {
                 </CButton>
               </CButtonGroup>
               <CButton 
+                color="success" 
+                variant="outline" 
+                onClick={triggerCollection}
+                disabled={collecting || loading}
+                className="me-2"
+              >
+                {collecting ? (
+                  <CSpinner size="sm" />
+                ) : (
+                  <CIcon icon={cilReload} />
+                )}
+                {collecting ? ' Collecte...' : ' Collecter'}
+              </CButton>
+              <CButton 
                 color="primary" 
                 variant="outline" 
                 onClick={handleRefresh}
-                disabled={loading}
+                disabled={loading || collecting}
               >
                 {loading ? (
                   <CSpinner size="sm" />
@@ -264,24 +329,41 @@ const NetworkStats = () => {
               <CProgress animated value={100} className="mb-3" />
               <p>Chargement des statistiques...</p>
             </div>
-          ) : (
+          ) : globalStats ? (
             <>
-              <CRow>
+              {/* Vue d'ensemble */}
+              <CRow className="mb-4">
                 <CCol sm={6} lg={3}>
                   <CCard className="mb-4">
                     <CCardBody>
                       <div className="d-flex justify-content-between align-items-center">
                         <div>
-                          <div className="fs-6 fw-semibold text-body-secondary">Download</div>
-                          <div className="fs-4 fw-semibold">{formatBandwidth(stats.bandwidth.download)}</div>
+                          <div className="fs-6 fw-semibold text-body-secondary">Appareils Actifs</div>
+                          <div className="fs-4 fw-semibold">
+                            {globalStats.activeDevices}/{globalStats.totalDevices}
+                          </div>
+                          <div className="fs-6 text-muted">
+                            {globalStats.totalDevices > 0 
+                              ? `${((globalStats.activeDevices / globalStats.totalDevices) * 100).toFixed(1)}%`
+                              : '0%'
+                            }
+                          </div>
                         </div>
-                        <CIcon icon={cilCloudDownload} size="xl" className="text-primary" />
+                        <CIcon icon={cilDevices} size="xl" className="text-primary" />
                       </div>
                       <CProgress 
                         className="mt-3" 
                         height={4} 
-                        value={(stats.bandwidth.download / 100) * 100} 
-                        color={stats.bandwidth.download > 80 ? 'danger' : stats.bandwidth.download > 60 ? 'warning' : 'success'}
+                        value={globalStats.totalDevices > 0 
+                          ? (globalStats.activeDevices / globalStats.totalDevices) * 100 
+                          : 0
+                        }
+                        color={getColorByValue(
+                          globalStats.totalDevices > 0 
+                            ? (globalStats.failedDevices / globalStats.totalDevices) * 100 
+                            : 0,
+                          { warning: 10, critical: 20 }
+                        )}
                       />
                     </CCardBody>
                   </CCard>
@@ -291,35 +373,16 @@ const NetworkStats = () => {
                     <CCardBody>
                       <div className="d-flex justify-content-between align-items-center">
                         <div>
-                          <div className="fs-6 fw-semibold text-body-secondary">Upload</div>
-                          <div className="fs-4 fw-semibold">{formatBandwidth(stats.bandwidth.upload)}</div>
-                        </div>
-                        <CIcon icon={cilCloudUpload} size="xl" className="text-success" />
-                      </div>
-                      <CProgress 
-                        className="mt-3" 
-                        height={4} 
-                        value={(stats.bandwidth.upload / 100) * 100}
-                        color={stats.bandwidth.upload > 80 ? 'danger' : stats.bandwidth.upload > 60 ? 'warning' : 'success'}
-                      />
-                    </CCardBody>
-                  </CCard>
-                </CCol>
-                <CCol sm={6} lg={3}>
-                  <CCard className="mb-4">
-                    <CCardBody>
-                      <div className="d-flex justify-content-between align-items-center">
-                        <div>
-                          <div className="fs-6 fw-semibold text-body-secondary">Latence</div>
-                          <div className="fs-4 fw-semibold">{stats.bandwidth.latency} ms</div>
+                          <div className="fs-6 fw-semibold text-body-secondary">CPU Moyen</div>
+                          <div className="fs-4 fw-semibold">{globalStats.summary.avgCpu?.toFixed(1) || 0}%</div>
                         </div>
                         <CIcon icon={cilSpeedometer} size="xl" className="text-warning" />
                       </div>
                       <CProgress 
                         className="mt-3" 
                         height={4} 
-                        value={stats.bandwidth.latency}
-                        color={stats.bandwidth.latency > 100 ? 'danger' : stats.bandwidth.latency > 50 ? 'warning' : 'success'}
+                        value={globalStats.summary.avgCpu || 0}
+                        color={getColorByValue(globalStats.summary.avgCpu || 0, { warning: 70, critical: 90 })}
                       />
                     </CCardBody>
                   </CCard>
@@ -329,51 +392,144 @@ const NetworkStats = () => {
                     <CCardBody>
                       <div className="d-flex justify-content-between align-items-center">
                         <div>
-                          <div className="fs-6 fw-semibold text-body-secondary">Perte de paquets</div>
-                          <div className="fs-4 fw-semibold">{stats.bandwidth.packetLoss}%</div>
+                          <div className="fs-6 fw-semibold text-body-secondary">Mémoire Moyenne</div>
+                          <div className="fs-4 fw-semibold">{formatMemory(globalStats.summary.avgMemory)}</div>
                         </div>
-                        <CIcon icon={cilChart} size="xl" className="text-danger" />
+                        <CIcon icon={cilChart} size="xl" className="text-info" />
                       </div>
                       <CProgress 
                         className="mt-3" 
                         height={4} 
-                        value={stats.bandwidth.packetLoss}
-                        color={stats.bandwidth.packetLoss > 5 ? 'danger' : stats.bandwidth.packetLoss > 1 ? 'warning' : 'success'}
+                        value={globalStats.summary.avgMemory || 0}
+                        color={getColorByValue(globalStats.summary.avgMemory || 0, { warning: 2000, critical: 1000 })}
+                      />
+                    </CCardBody>
+                  </CCard>
+                </CCol>
+                <CCol sm={6} lg={3}>
+                  <CCard className="mb-4">
+                    <CCardBody>
+                      <div className="d-flex justify-content-between align-items-center">
+                        <div>
+                          <div className="fs-6 fw-semibold text-body-secondary">Latence Moyenne</div>
+                          <div className="fs-4 fw-semibold">{formatLatency(globalStats.summary.avgLatency)}</div>
+                        </div>
+                        <CIcon icon={cilSpeedometer} size="xl" className="text-success" />
+                      </div>
+                      <CProgress 
+                        className="mt-3" 
+                        height={4} 
+                        value={globalStats.summary.avgLatency || 0}
+                        color={getColorByValue(globalStats.summary.avgLatency || 0, { warning: 100, critical: 200 })}
                       />
                     </CCardBody>
                   </CCard>
                 </CCol>
               </CRow>
 
+              {/* Métriques détaillées */}
+              <CRow className="mb-4">
+                <CCol sm={6} lg={3}>
+                  <CCard className="mb-4">
+                    <CCardBody>
+                      <div className="d-flex justify-content-between align-items-center">
+                        <div>
+                          <div className="fs-6 fw-semibold text-body-secondary">Bande Passante</div>
+                          <div className="fs-4 fw-semibold">{formatBandwidth(globalStats.summary.avgBandwidth)}</div>
+                        </div>
+                        <CIcon icon={cilCloudDownload} size="xl" className="text-primary" />
+                      </div>
+                    </CCardBody>
+                  </CCard>
+                </CCol>
+                <CCol sm={6} lg={3}>
+                  <CCard className="mb-4">
+                    <CCardBody>
+                      <div className="d-flex justify-content-between align-items-center">
+                        <div>
+                          <div className="fs-6 fw-semibold text-body-secondary">Anomalies</div>
+                          <div className="fs-4 fw-semibold">{globalStats.globalAnomalies?.count || 0}</div>
+                        </div>
+                        <CIcon icon={cilWarning} size="xl" className="text-danger" />
+                      </div>
+                    </CCardBody>
+                  </CCard>
+                </CCol>
+                <CCol sm={6} lg={3}>
+                  <CCard className="mb-4">
+                    <CCardBody>
+                      <div className="d-flex justify-content-between align-items-center">
+                        <div>
+                          <div className="fs-6 fw-semibold text-body-secondary">Appareils Échoués</div>
+                          <div className="fs-4 fw-semibold">{globalStats.failedDevices || 0}</div>
+                        </div>
+                        <CIcon icon={cilXCircle} size="xl" className="text-danger" />
+                      </div>
+                    </CCardBody>
+                  </CCard>
+                </CCol>
+                <CCol sm={6} lg={3}>
+                  <CCard className="mb-4">
+                    <CCardBody>
+                      <div className="d-flex justify-content-between align-items-center">
+                        <div>
+                          <div className="fs-6 fw-semibold text-body-secondary">Dernière Mise à Jour</div>
+                          <div className="fs-6 fw-semibold">
+                            {globalStats.timestamp 
+                              ? new Date(globalStats.timestamp).toLocaleString('fr-FR')
+                              : 'N/A'
+                            }
+                          </div>
+                        </div>
+                        <CIcon icon={cilReload} size="xl" className="text-info" />
+                      </div>
+                    </CCardBody>
+                  </CCard>
+                </CCol>
+              </CRow>
+
+              {/* Anomalies récentes */}
               <CRow>
                 <CCol md={6}>
                   <CCard className="mb-4">
                     <CCardHeader>
-                      <h5 className="mb-0">Trafic par Protocole</h5>
+                      <h5 className="mb-0">
+                        <CIcon icon={cilWarning} className="me-2" />
+                        Anomalies Récentes
+                      </h5>
                     </CCardHeader>
                     <CCardBody>
-                      {stats.traffic && stats.traffic.length > 0 ? (
+                      {anomalies && anomalies.length > 0 ? (
                         <CTable hover>
                           <CTableHead>
                             <CTableRow>
-                              <CTableHeaderCell>Protocole</CTableHeaderCell>
-                              <CTableHeaderCell>Port</CTableHeaderCell>
-                              <CTableHeaderCell>Trafic</CTableHeaderCell>
-                              <CTableHeaderCell>%</CTableHeaderCell>
+                              <CTableHeaderCell>Type</CTableHeaderCell>
+                              <CTableHeaderCell>Sévérité</CTableHeaderCell>
+                              <CTableHeaderCell>Message</CTableHeaderCell>
+                              <CTableHeaderCell>Date</CTableHeaderCell>
                             </CTableRow>
                           </CTableHead>
                           <CTableBody>
-                            {stats.traffic.map((item, index) => (
+                            {anomalies.slice(0, 5).map((anomaly, index) => (
                               <CTableRow key={index}>
-                                <CTableDataCell>{item.protocol}</CTableDataCell>
-                                <CTableDataCell>{item.port}</CTableDataCell>
-                                <CTableDataCell>{formatTraffic(item.bytes)}</CTableDataCell>
                                 <CTableDataCell>
-                                  <CProgress
-                                    thin
-                                    color={item.percentage > 50 ? 'primary' : item.percentage > 25 ? 'success' : 'info'}
-                                    value={item.percentage}
-                                  />
+                                  <span className="text-capitalize">{anomaly.type?.replace('-', ' ')}</span>
+                                </CTableDataCell>
+                                <CTableDataCell>
+                                  <CBadge color={getAnomalySeverityColor(anomaly.severity)}>
+                                    {anomaly.severity}
+                                  </CBadge>
+                                </CTableDataCell>
+                                <CTableDataCell>
+                                  <small>{anomaly.message}</small>
+                                </CTableDataCell>
+                                <CTableDataCell>
+                                  <small>
+                                    {anomaly.timestamp 
+                                      ? new Date(anomaly.timestamp).toLocaleString('fr-FR')
+                                      : 'N/A'
+                                    }
+                                  </small>
                                 </CTableDataCell>
                               </CTableRow>
                             ))}
@@ -381,7 +537,8 @@ const NetworkStats = () => {
                         </CTable>
                       ) : (
                         <div className="text-center py-4">
-                          <p className="text-muted">Aucune donnée de trafic disponible</p>
+                          <CIcon icon={cilCheckCircle} size="xl" className="text-success mb-3" />
+                          <p className="text-muted">Aucune anomalie détectée</p>
                         </div>
                       )}
                     </CCardBody>
@@ -390,37 +547,43 @@ const NetworkStats = () => {
                 <CCol md={6}>
                   <CCard className="mb-4">
                     <CCardHeader>
-                      <h5 className="mb-0">Statistiques par Appareil</h5>
+                      <h5 className="mb-0">
+                        <CIcon icon={cilDevices} className="me-2" />
+                        Collections Récentes
+                      </h5>
                     </CCardHeader>
                     <CCardBody>
-                      {stats.devices && stats.devices.length > 0 ? (
+                      {recentStats && recentStats.length > 0 ? (
                         <CTable hover>
                           <CTableHead>
                             <CTableRow>
-                              <CTableHeaderCell>Appareil</CTableHeaderCell>
-                              <CTableHeaderCell>Trafic</CTableHeaderCell>
-                              <CTableHeaderCell>Connexions</CTableHeaderCell>
-                              <CTableHeaderCell>Statut</CTableHeaderCell>
+                              <CTableHeaderCell>Date</CTableHeaderCell>
+                              <CTableHeaderCell>Appareils</CTableHeaderCell>
+                              <CTableHeaderCell>Anomalies</CTableHeaderCell>
+                              <CTableHeaderCell>Durée</CTableHeaderCell>
                             </CTableRow>
                           </CTableHead>
                           <CTableBody>
-                            {stats.devices.map((device, index) => (
+                            {recentStats.slice(0, 5).map((stat, index) => (
                               <CTableRow key={index}>
-                                <CTableDataCell>{device.hostname}</CTableDataCell>
-                                <CTableDataCell>{formatTraffic(device.traffic)}</CTableDataCell>
-                                <CTableDataCell>{device.connections}</CTableDataCell>
                                 <CTableDataCell>
-                                  <span
-                                    className={`badge bg-${
-                                      device.status === 'active'
-                                        ? 'success'
-                                        : device.status === 'warning'
-                                        ? 'warning'
-                                        : 'danger'
-                                    }`}
-                                  >
-                                    {device.status}
-                                  </span>
+                                  <small>
+                                    {stat.timestamp 
+                                      ? new Date(stat.timestamp).toLocaleString('fr-FR')
+                                      : 'N/A'
+                                    }
+                                  </small>
+                                </CTableDataCell>
+                                <CTableDataCell>
+                                  <small>
+                                    {stat.activeDevices}/{stat.totalDevices}
+                                  </small>
+                                </CTableDataCell>
+                                <CTableDataCell>
+                                  <small>{stat.globalAnomalies?.count || 0}</small>
+                                </CTableDataCell>
+                                <CTableDataCell>
+                                  <small>{stat.collectionDuration || 0}ms</small>
                                 </CTableDataCell>
                               </CTableRow>
                             ))}
@@ -428,15 +591,15 @@ const NetworkStats = () => {
                         </CTable>
                       ) : (
                         <div className="text-center py-4">
-                          <p className="text-muted">Aucun appareil trouvé</p>
+                          <p className="text-muted">Aucune collection récente</p>
                           <CButton 
                             color="primary" 
                             size="sm" 
-                            onClick={handleRefresh}
-                            className="mt-2"
+                            onClick={triggerCollection}
+                            disabled={collecting}
                           >
                             <CIcon icon={cilReload} className="me-2" />
-                            Actualiser
+                            Lancer une collecte
                           </CButton>
                         </div>
                       )}
@@ -445,6 +608,19 @@ const NetworkStats = () => {
                 </CCol>
               </CRow>
             </>
+          ) : (
+            <div className="text-center py-5">
+              <CIcon icon={cilDevices} size="xl" className="text-muted mb-3" />
+              <p className="text-muted">Aucune statistique disponible</p>
+              <CButton 
+                color="primary" 
+                onClick={triggerCollection}
+                disabled={collecting}
+              >
+                <CIcon icon={cilReload} className="me-2" />
+                Lancer une collecte
+              </CButton>
+            </div>
           )}
         </CCardBody>
       </CCard>

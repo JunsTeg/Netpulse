@@ -2,7 +2,7 @@ import API_CONFIG from '../config/api.config';
 
 class ApiService {
   constructor() {
-    this.baseURL = API_CONFIG.baseURL;
+    this.baseURL = API_CONFIG.BASE_URL;
     this.headers = API_CONFIG.headers;
     console.log('Configuration API initiale:', {
       baseURL: this.baseURL,

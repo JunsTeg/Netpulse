@@ -699,7 +699,18 @@ if __name__ == "__main__":
 `
 
     const fs = require("fs").promises
-    const scriptPath = `./temp/python-scan-${Date.now()}.py`
+    const path = require("path")
+    
+    // Création du dossier temp s'il n'existe pas
+    const tempDir = path.join(process.cwd(), "temp")
+    try {
+      await fs.access(tempDir)
+    } catch (error) {
+      this.logger.log(`[PYTHON] Création du dossier temp: ${tempDir}`)
+      await fs.mkdir(tempDir, { recursive: true })
+    }
+    
+    const scriptPath = path.join(tempDir, `python-scan-${Date.now()}.py`)
     await fs.writeFile(scriptPath, script, "utf8")
 
     return scriptPath
@@ -707,7 +718,19 @@ if __name__ == "__main__":
 
   private async runPythonScript(scriptPath: string, config: PythonScanConfig): Promise<string> {
     try {
+      const path = require("path")
+      const fs = require("fs").promises
+      
+      // Vérification que le fichier existe
+      try {
+        await fs.access(scriptPath)
+      } catch (error) {
+        throw new Error(`Script Python introuvable: ${scriptPath}`)
+      }
+      
       const command = `python "${scriptPath}"`
+      this.logger.log(`[PYTHON] Exécution: ${command}`)
+      
       const { stdout, stderr } = await execAsync(command, {
         timeout: 600000, // 10 minutes timeout
         maxBuffer: 20 * 1024 * 1024, // 20MB buffer
@@ -718,9 +741,9 @@ if __name__ == "__main__":
       }
 
       // Nettoyage du fichier temporaire
-      const fs = require("fs").promises
       try {
         await fs.unlink(scriptPath)
+        this.logger.log(`[PYTHON] Fichier temporaire supprimé: ${scriptPath}`)
       } catch (error) {
         this.logger.warn(`[PYTHON] Erreur suppression fichier temporaire: ${error.message}`)
       }

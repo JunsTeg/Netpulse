@@ -9,6 +9,8 @@ import { NetworkModule } from './modules/network/network.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { TopologyModule } from './modules/topology';
 import { ExecutionManagerModule } from './execution-manager/execution-manager.module';
+import { MvpStatsModule } from './modules/mvp-stats/mvp-stats.module';
+import { TempDirMiddleware } from './utils/temp-dir.middleware';
 
 @Module({
   imports: [
@@ -21,10 +23,12 @@ import { ExecutionManagerModule } from './execution-manager/execution-manager.mo
     NetworkModule,
     TopologyModule,
     ExecutionManagerModule,
+    MvpStatsModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
+    TempDirMiddleware,
     // Désactiver temporairement le guard global pour tester
     // {
     //   provide: APP_GUARD,

@@ -148,6 +148,136 @@ export class NmapAgentService {
     }
   }
 
+  /**
+   * Nouvelle méthode pour le scan rapide minimal - détection uniquement sans enrichissement
+   * Utilisée spécifiquement pour le mode "rapide" du scan manuel
+   */
+  async executeQuickDetection(config: NmapScanConfig, userId?: string): Promise<NmapScanResult> {
+    const startTime = Date.now()
+    const actionId = uuidv4()
+
+    try {
+      // Enregistrement de l'action dans l'historique
+      await this.logAction(actionId, userId, "network_scan_start", "Démarrage du scan rapide minimal")
+
+      // Verification des outils necessaires
+      const tools = await this.checkRequiredTools()
+      if (!tools.allInstalled) {
+        const error = new Error(`Outils manquants: ${tools.missing.join(", ")}`)
+        await this.saveErrorLog("system", error, "checkRequiredTools")
+        throw error
+      }
+
+      // 1. Scan rapide du réseau local uniquement (sans enrichissement ni fallbacks)
+      await this.logAction(actionId, userId, "network_scan", `Scan rapide du réseau ${config.target}`)
+      const nmapDevices = await this.executeQuickScan(config.target, config.deepMode, config.customPorts, true) // skipFallbacks = true
+      this.logger.log(`[SCAN RAPIDE] Appareils trouvés: ${nmapDevices.length}`)
+
+      // 2. CRITIQUE: Upsert direct des appareils détectés (sans enrichissement)
+      const upsertedIds = await this.appareilRepository.upsertMany(nmapDevices)
+      const savedDevices: Device[] = nmapDevices.map((d, i) => ({ ...d, id: upsertedIds[i] || d.id }))
+
+      await this.logAction(
+        actionId,
+        userId,
+        "network_scan_complete",
+        `Scan rapide terminé. ${savedDevices.length} appareils détectés en ${Date.now() - startTime}ms`,
+      )
+
+      return {
+        success: true,
+        devices: savedDevices,
+        scanTime: new Date(),
+        scanDuration: Date.now() - startTime,
+      }
+    } catch (error) {
+      await this.saveErrorLog("system", error, "executeQuickDetection")
+      this.logger.error(`[SCAN RAPIDE] Erreur scan: ${error.message}`)
+      return {
+        success: false,
+        devices: [],
+        error: error.message,
+        scanTime: new Date(),
+        scanDuration: Date.now() - startTime,
+      }
+    }
+  }
+
+  /**
+   * Version optimisée du scan complet SANS collecte de statistiques
+   * Réduit significativement le temps d'exécution tout en préservant la complétude
+   */
+  async executeWithoutStats(config: NmapScanConfig, userId?: string): Promise<NmapScanResult> {
+    const startTime = Date.now()
+    const actionId = uuidv4()
+
+    try {
+      // Enregistrement de l'action dans l'historique
+      await this.logAction(actionId, userId, "network_scan_start", "Démarrage du scan réseau (sans stats)")
+
+      // Verification des outils necessaires
+      const tools = await this.checkRequiredTools()
+      if (!tools.allInstalled) {
+        const error = new Error(`Outils manquants: ${tools.missing.join(", ")}`)
+        await this.saveErrorLog("system", error, "checkRequiredTools")
+        throw error
+      }
+
+      // 1. Scan rapide du reseau local uniquement
+      await this.logAction(actionId, userId, "network_scan", `Scan du réseau ${config.target}`)
+      const nmapDevices = await this.executeQuickScan(config.target, config.deepMode, config.customPorts)
+      this.logger.log(`[SCAN] Appareils trouves: ${nmapDevices.length}`)
+
+      // 2. Enrichissement des informations de base
+      const enrichedDevices = await this.enrichBasicInfo(nmapDevices)
+      await this.logAction(actionId, userId, "network_scan", `${enrichedDevices.length} appareils enrichis`)
+
+      // 3. CRITIQUE: Upsert de tous les appareils avec stats par défaut
+      // Initialisation des stats avec des valeurs par défaut au lieu de les collecter
+      const devicesWithDefaultStats = enrichedDevices.map(device => ({
+        ...device,
+        stats: {
+          ...device.stats,
+          cpu: 0,
+          memory: 0,
+          latency: 0,
+          bandwidth: { download: 0, upload: 0 },
+          lastStatsError: "Stats non collectées (mode optimisé)",
+        }
+      }))
+
+      const upsertedIds = await this.appareilRepository.upsertMany(devicesWithDefaultStats)
+      const savedDevices: Device[] = devicesWithDefaultStats.map((d, i) => ({ ...d, id: upsertedIds[i] || d.id }))
+
+      // 4. SUPPRIMÉ: Collecte des statistiques (gain de temps significatif)
+      this.logger.log(`[SCAN] Mode optimisé: collecte de statistiques désactivée pour ${savedDevices.length} appareils`)
+
+      await this.logAction(
+        actionId,
+        userId,
+        "network_scan_complete",
+        `Scan terminé (sans stats). ${savedDevices.length} appareils trouvés en ${Date.now() - startTime}ms`,
+      )
+
+      return {
+        success: true,
+        devices: savedDevices,
+        scanTime: new Date(),
+        scanDuration: Date.now() - startTime,
+      }
+    } catch (error) {
+      await this.saveErrorLog("system", error, "executeWithoutStats")
+      this.logger.error(`[SCAN] Erreur scan: ${error.message}`)
+      return {
+        success: false,
+        devices: [],
+        error: error.message,
+        scanTime: new Date(),
+        scanDuration: Date.now() - startTime,
+      }
+    }
+  }
+
   private async logAction(actionId: string, userId: string | undefined, action: string, detail: string): Promise<void> {
     try {
       // Si pas d'ID utilisateur, on ne log pas l'action
@@ -212,29 +342,47 @@ export class NmapAgentService {
     }
   }
 
-  private getOptimizedPorts(deepMode: boolean, customPorts?: string | number[]): string {
+  private getOptimizedPorts(deepMode: boolean, customPorts?: string | number[], ultraFast = false): string {
+    // Liste ultra-réduite pour le mode rapide minimal
+    const ultraFastPorts = [80, 443, 22, 3389];
     // Liste discriminante rapide
     const fastPorts = [22, 80, 443, 445, 3389, 515, 9100, 161, 8080];
     // Liste plus large pour le mode complet
     const fullPorts = [21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 993, 995, 1723, 3306, 3389, 5900, 8080, 515, 9100, 161];
+    
     if (customPorts) {
       if (Array.isArray(customPorts)) return customPorts.join(',');
       if (typeof customPorts === 'string') return customPorts;
     }
+    
+    if (ultraFast) {
+      return ultraFastPorts.join(',');
+    }
+    
     return (deepMode ? fullPorts : fastPorts).join(',');
   }
 
   // Ajout d'un paramètre optionnel pour le mode (rapide/complet)
-  private async executeQuickScan(network: string, deepMode = false, customPorts?: string | number[]): Promise<Device[]> {
+  private async executeQuickScan(network: string, deepMode = false, customPorts?: string | number[], skipFallbacks = false): Promise<Device[]> {
     try {
       this.logger.log(`[SCAN] Démarrage scan du réseau: ${network}`);
       const isWindows = os.platform() === "win32";
       const mode = deepMode ? 'complet' : 'rapide';
       const { hostTimeout, maxRetries, timing } = NETWORK_TIMEOUTS.nmap[mode];
-      const ports = this.getOptimizedPorts(deepMode, customPorts);
+      const ports = this.getOptimizedPorts(deepMode, customPorts, skipFallbacks); // ultraFast = skipFallbacks
       let nmapCommand: string;
-      nmapCommand = `nmap -sn -PE -PP -PS${ports} -PA${ports} -T5 --min-parallelism 100 --max-parallelism 256 --max-retries 1 --host-timeout 500ms ${network}`;
-      this.logger.log(`[SCAN] Commande nmap: ${nmapCommand}`);
+      
+      // Optimisation des timeouts pour le mode rapide minimal
+      if (skipFallbacks) {
+        // Timeouts ultra-courts pour le mode rapide minimal
+        nmapCommand = `nmap -sn -PE -PP -PS${ports} -PA${ports} -T5 --min-parallelism 200 --max-parallelism 500 --max-retries 1 --host-timeout 200ms ${network}`;
+        this.logger.log(`[SCAN RAPIDE] Commande nmap optimisée: ${nmapCommand}`);
+      } else {
+        // Commande normale pour les autres modes
+        nmapCommand = `nmap -sn -PE -PP -PS${ports} -PA${ports} -T5 --min-parallelism 100 --max-parallelism 256 --max-retries 1 --host-timeout 500ms ${network}`;
+        this.logger.log(`[SCAN] Commande nmap: ${nmapCommand}`);
+      }
+      
       const { stdout, stderr } = await execAsync(nmapCommand);
       this.logger.log(`[SCAN] Sortie nmap (${stdout.length} caractères):`);
       this.logger.log(`[SCAN] ${stdout.substring(0, 500)}...`);
@@ -243,6 +391,13 @@ export class NmapAgentService {
       }
       let devices = this.parseNmapOutput(stdout, network);
       this.logger.log(`[SCAN] Appareils trouvés après scan ping: ${devices.length}`);
+      
+      // Skip fallbacks si demandé (mode rapide minimal)
+      if (skipFallbacks) {
+        this.logger.log(`[SCAN RAPIDE] Fallbacks désactivés, retour direct de ${devices.length} appareils`);
+        return devices;
+      }
+      
       if (devices.length <= 1) {
         this.logger.log(`[SCAN] Peu d'appareils trouvés, tentative de scan de ports...`);
         const portScanDevices = await this.executePortScan(network, deepMode, customPorts);
